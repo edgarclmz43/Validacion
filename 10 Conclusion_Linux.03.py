@@ -32,7 +32,7 @@ def process_file(file_tuple):
 
         # ==================== Análisis 1: Linealidad ====================
         # Se extrae la información desde la celda E7 (rango E7:M94) de la hoja "Linealidad - Parametrico"
-        df_linealidad = pd.read_excel(file_path, sheet_name="Linealidad - Parametrico", header=None)
+        df_linealidad = pd.read_excel(file_path, sheet_name="Linealidad - no parametrico", header=None)
         data_range_linealidad = df_linealidad.iloc[6:94, 4:13]  # filas 7 a 94, columnas E a M
         data_str_linealidad = data_range_linealidad.to_csv(index=False)
         prompt_linealidad = (

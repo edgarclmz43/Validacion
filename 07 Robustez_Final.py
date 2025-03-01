@@ -129,6 +129,8 @@ def procesar_archivos(entry_widget):
         valor = ws["Y37"].value
         if valor is None or str(valor).strip() == "":
             valor = ws["Y38"].value
+            if valor is None or str(valor).strip() == "":
+             valor = ws["Y39"].value
         if certificado is None or valor is None:
             errores.append(f"No se pudo leer certificado o valor en {archivo}")
             wb.close()
@@ -202,6 +204,8 @@ def procesar_archivo_detallado(archivo, skiprows_list):
     temp_val = ws_cert["Y37"].value
     if temp_val is None or str(temp_val).strip() == "":
         temp_val = ws_cert["Y38"].value
+        if temp_val is None or str(temp_val).strip() == "":
+            temp_val = ws_cert["Y39"].value
 
     if "Registro" not in wb.sheetnames:
         print(f"La hoja 'Registro' no se encuentra en {archivo}")
@@ -407,6 +411,7 @@ def procesar_archivo_evaluacion(ruta_archivo):
 
         # Fusionar celdas en el rango B43:K49 usando la API de Excel
         ws.range("B43:K49").api.Merge()
+        ws.range("B43:K49").row_height = 16
         conclusion_text = (f"El método de calibración es robusto. A pesar de la variación de temperatura observada durante el experimento, "
                            f"que osciló entre un mínimo de {temp_min} °C y un máximo de {temp_max} °C, la prueba de Anova de una vía "
                            f"arroja un valor p de {p_value:.4g}. Este valor es significativamente superior al nivel de significancia de 0.05, "
