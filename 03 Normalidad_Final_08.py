@@ -1,10 +1,34 @@
+"""
+===========================================================
+Aplicación de Análisis de Normalidad y Detección de Outliers
+===========================================================
+
+Propósito:
+    Esta aplicación permite analizar la normalidad y detectar outliers
+    en archivos Excel. Se evalúan pruebas estadísticas (Shapiro-Wilk,
+    Anderson-Darling y Grubbs) y se aplican transformaciones (Log, Box-Cox,
+    Yeo-Johnson) en caso de que los datos no sigan una distribución normal.
+    Los resultados, incluyendo gráficos y conclusiones, se guardan en una
+    nueva hoja denominada "Normalidad" dentro de cada archivo Excel analizado.
+
+Instrucciones de uso:
+    1. Indique la ruta de la carpeta que contiene los archivos Excel, ya sea
+       escribiéndola en el campo correspondiente o seleccionándola a través del
+       botón "Seleccionar Carpeta".
+    2. Una vez seleccionada la carpeta, haga clic en "Procesar Datos" para iniciar
+       el análisis.
+    3. Los resultados se guardarán en la hoja "Normalidad" de cada archivo Excel.
+
+Nota: No se eliminan los outliers durante el análisis principal.
+"""
+
 import os
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tkinter import Tk, filedialog
+from tkinter import Tk, filedialog, Label, Entry, Button, Frame, END
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenPyxlImage
@@ -133,7 +157,7 @@ def aplicar_transformaciones(datos):
             resultados_transformaciones['Log'] = {'Conclusión Global': f'Error en Log: {e}'}
     else:
         resultados_transformaciones['Log'] = {'Conclusión Global': 'No aplicable (datos <= 0)'}
-    
+
     if todos_positivos:
         try:
             bc_data, lambda_opt = stats.boxcox(datos_mod)
@@ -146,7 +170,7 @@ def aplicar_transformaciones(datos):
             resultados_transformaciones['Box-Cox'] = {'Conclusión Global': f'Error en Box-Cox: {e}'}
     else:
         resultados_transformaciones['Box-Cox'] = {'Conclusión Global': 'No aplicable (datos <= 0)'}
-    
+
     try:
         pt = PowerTransformer(method='yeo-johnson')
         yj_data = pt.fit_transform(datos_mod.values.reshape(-1, 1)).flatten()
@@ -374,7 +398,7 @@ def analizar_normalidad_y_outliers(datos, nivel):
 # -------------------------
 # FUNCIÓN PRINCIPAL
 # -------------------------
-def main():
+def main(folder=None):
     """
     Función principal para analizar normalidad y outliers (sin eliminar datos) en archivos Excel.
     Se guardan los resultados en una hoja "Normalidad" que incluye:
@@ -382,14 +406,18 @@ def main():
       - Resultados de las pruebas de Grubbs (con p-valores, hipótesis y conclusiones, y mensajes con títulos).
       - Un resumen final con la recomendación de utilizar estadísticos paramétricos (si es normal)
         o no paramétricos (si no es normal).
+
+    Si se proporciona el parámetro 'folder', se utiliza esa carpeta; de lo contrario,
+    se solicitará al usuario seleccionar la carpeta.
     """
-    carpeta = seleccionar_carpeta()
-    if not carpeta:
+    if folder is None:
+        folder = seleccionar_carpeta()
+    if not folder:
         print("No se seleccionó ninguna carpeta. Terminando ejecución.")
         return
 
     extensiones_validas = ('.xlsx', '.xls', '.xlsm')
-    archivos_excel = [os.path.join(carpeta, f) for f in os.listdir(carpeta)
+    archivos_excel = [os.path.join(folder, f) for f in os.listdir(folder)
                       if f.lower().endswith(extensiones_validas)]
     
     if not archivos_excel:
@@ -651,5 +679,65 @@ def main():
         except Exception as e:
             print(f"Error al guardar el archivo '{archivo_excel}': {e}")
 
+# -------------------------
+# INTERFAZ GRÁFICA DE USUARIO
+# -------------------------
+def interfaz_app():
+    """Crea la interfaz gráfica para la aplicación."""
+    window = Tk()
+    window.title("Aplicación de Análisis de Normalidad y Outliers")
+    window.geometry("600x400")
+
+    # Título de la aplicación
+    title_label = Label(window, text="Análisis de Normalidad y Outliers en Archivos Excel", font=("Arial", 16, "bold"))
+    title_label.pack(pady=10)
+
+    # Propósito
+    purpose_text = ("Esta aplicación permite analizar la normalidad y detectar outliers en archivos Excel.\n"
+                    "Se evaluarán pruebas estadísticas y se generará un reporte en cada archivo.")
+    purpose_label = Label(window, text=purpose_text, font=("Arial", 12), justify="center")
+    purpose_label.pack(pady=5)
+
+    # Instrucciones de uso
+    instructions_text = ("Instrucciones de uso:\n"
+                         "1. Indique la ruta de la carpeta que contiene los archivos Excel, o use el botón 'Seleccionar Carpeta'.\n"
+                         "2. Haga clic en 'Procesar Datos' para iniciar el análisis.\n"
+                         "3. Los resultados se guardarán en la hoja 'Normalidad' de cada archivo Excel.")
+    instructions_label = Label(window, text=instructions_text, font=("Arial", 10), justify="left")
+    instructions_label.pack(pady=5)
+
+    # Sección para seleccionar la carpeta
+    folder_frame = Frame(window)
+    folder_frame.pack(pady=10)
+    folder_label = Label(folder_frame, text="Carpeta:")
+    folder_label.pack(side="left", padx=5)
+    folder_entry = Entry(folder_frame, width=40)
+    folder_entry.pack(side="left", padx=5)
+
+    def browse_folder():
+        folder = filedialog.askdirectory(title="Seleccionar carpeta con archivos de Excel")
+        if folder:
+            folder_entry.delete(0, END)
+            folder_entry.insert(0, folder)
+    browse_button = Button(folder_frame, text="Seleccionar Carpeta", command=browse_folder)
+    browse_button.pack(side="left", padx=5)
+
+    # Botón para procesar los datos
+    def process_data():
+        folder = folder_entry.get()
+        if not folder:
+            folder = filedialog.askdirectory(title="Seleccionar carpeta con archivos de Excel")
+            if not folder:
+                print("No se seleccionó ninguna carpeta.")
+                return
+            folder_entry.delete(0, END)
+            folder_entry.insert(0, folder)
+        main(folder)
+        print("Procesamiento completado.")
+    process_button = Button(window, text="Procesar Datos", font=("Arial", 12, "bold"), command=process_data)
+    process_button.pack(pady=20)
+
+    window.mainloop()
+
 if __name__ == "__main__":
-    main()
+    interfaz_app()

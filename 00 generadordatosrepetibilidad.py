@@ -169,8 +169,8 @@ def procesar_archivos():
 # ------------------------------------------------------------------------------
 ventana = tk.Tk()
 ventana.title("Actualización de Archivos Excel")
-ventana.geometry("700x550")
-ventana.resizable(False, False)  # Fijar tamaño de la ventana
+ventana.geometry("700x600")  # Aumentar la altura de la ventana
+ventana.resizable(True, True)  # Permitir redimensionar la ventana
 
 # Estilo de fuente para la interfaz
 fuente = ("Helvetica", 11)
@@ -226,15 +226,15 @@ etiqueta_desviacion.pack(side="left", padx=(0, 10))
 entry_desviacion = tk.Entry(frame_desviacion, font=fuente, width=20)
 entry_desviacion.pack(side="left", fill="x", expand=True)
 
+# Botón para iniciar el procesamiento de archivos
+boton_procesar = tk.Button(frame_desviacion, text="Procesar Archivos", font=("Helvetica", 12, "bold"),
+                           bg="#4CAF50", fg="white", padx=15, pady=8, command=procesar_archivos)
+boton_procesar.pack(side="left", padx=(10, 0))  # Ajustar el padding para mayor visibilidad
+
 # Cargar la configuración guardada en la base de datos y actualizar los campos correspondientes
 config_folder, config_desviacion = cargar_config()
 entry_carpeta.insert(0, config_folder)
 entry_desviacion.insert(0, config_desviacion)
-
-# Botón para iniciar el procesamiento de archivos
-boton_procesar = tk.Button(frame, text="Procesar Archivos", font=("Helvetica", 12, "bold"),
-                           bg="#4CAF50", fg="white", padx=15, pady=8, command=procesar_archivos)
-boton_procesar.pack(pady=(0, 10))
 
 # Ejecutar el loop principal de la interfaz gráfica
 ventana.mainloop()

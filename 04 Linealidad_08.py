@@ -1,66 +1,3 @@
-"""
-================================================================================
-APLICACIÓN PARA EL ANÁLISIS DE LINEALIDAD Y TEST DE SIGNIFICANCIA
-================================================================================
-
-DESCRIPCIÓN:
-  Esta aplicación en Python está diseñada para automatizar el análisis estadístico de archivos 
-  Excel que contienen datos para evaluar la linealidad de un método analítico. La aplicación 
-  se divide en dos partes principales:
-
-  1. Análisis de Regresión Lineal (OLS) por segmentos:
-     - Carga los datos de la hoja de Excel (por defecto, "Linealidad - no parametrico") a partir 
-       de columnas específicas, omitiendo filas de encabezado. Se detecta automáticamente la fila 
-       en la que se encuentra la etiqueta "LP" en la columna B y se saltan las filas hasta la siguiente,
-       donde comienzan los datos.
-     - Separa los datos en segmentos (por ejemplo, valores negativos y positivos) y, para cada segmento:
-         • Agrupa y calcula la media para cada valor único de X.
-         • Ajusta un modelo de regresión lineal ordinaria (OLS), pudiendo aplicar transformación 
-           logarítmica y errores robustos si alguno de los supuestos estadísticos no se cumple.
-         • Realiza pruebas sobre los residuales (Shapiro-Wilk, Durbin-Watson, Breusch-Pagan, White) y 
-           calcula el coeficiente de correlación junto con el estadístico t.
-         • Genera gráficos compuestos (dispersión con línea de regresión, Q-Q plot y gráfico de escala) y 
-           los guarda en archivos temporales, insertándolos en la hoja de Excel.
-         • Escribe los resultados (coeficientes, bondad de ajuste, análisis de residuales, correlación y 
-           conclusiones) en la misma hoja de Excel utilizando celdas combinadas, tablas y textos multilínea.
-
-  2. Test de Significancia – Linealidad:
-     - Lee y limpia los datos de la hoja "Linealidad - no parametrico" (columnas B y C), utilizando la 
-       detección automática de la fila de etiquetas y saltando hasta la fila siguiente para que comiencen los datos.
-     - Elimina outliers utilizando el método IQR.
-     - Calcula el coeficiente de correlación, realiza ANOVA, pruebas t y una prueba de Falta de Ajuste (Lack of Fit).
-     - Genera gráficos (por ejemplo, el gráfico de dispersión y regresión) y escribe los resultados en una 
-       nueva hoja de Excel denominada "Test Significancia - Linealidad", en la que se incluyen las hipótesis, 
-       el análisis estadístico y las conclusiones.
-
-USO:
-  - Al ejecutar el script se despliega una interfaz gráfica (usando tkinter) que solicita al usuario la carpeta 
-    que contiene los archivos Excel a procesar.
-  - Para cada archivo Excel se ejecuta en secuencia:
-      • El análisis OLS por segmentos (App 1).
-      • El Test de Significancia - Linealidad (App 2).
-  - Además, se incluye una función de prueba que permite listar en consola los datos que se usan para el análisis,
-    de modo que puedas revisar la tabla de valores (por ejemplo, para verificar el intercepto obtenido).
-  - Al finalizar, los resultados se guardan en los archivos Excel originales y se eliminan los archivos de imagen 
-    temporales.
-
-REQUISITOS Y DEPENDENCIAS:
-  - Python 3.x
-  - Librerías: os, glob, numpy, pandas, statsmodels, matplotlib, seaborn, tkinter, scipy y openpyxl.
-  - Asegúrese de tener instaladas estas librerías para el correcto funcionamiento de la aplicación.
-
-OBSERVACIONES IMPORTANTES:
-  - Algunas características implementadas (como celdas combinadas, inserción de imágenes y formatos de Excel) pueden 
-    no ser compatibles con el autoguardado automático de algunos editores o sistemas, lo que podría dañar el archivo 
-    al guardar. Se recomienda desactivar el autoguardado o realizar copias de seguridad antes de guardar.
-  - Se generan archivos temporales para los gráficos, que se eliminan una vez finalizado el procesamiento de cada archivo.
-
-AUTORES:
-  - (Incluir aquí los nombres de los desarrolladores o responsables, según corresponda)
-
-================================================================================
-"""
-
 import os
 import glob
 import numpy as np
@@ -108,6 +45,7 @@ COLUMNA_INICIO_EXCEL = 5   # Columna en la hoja Excel donde se empezará a escri
 # Funciones para el Análisis de Linealidad (App 1)
 # =============================================================================
 def escribir_encabezado_combinado(ws, row, col_start, col_end, texto, fill_color="FFD966"):
+    # Combina las celdas del encabezado y asigna formato
     ws.merge_cells(start_row=row, start_column=col_start, end_row=row, end_column=col_end)
     celda = ws.cell(row=row, column=col_start)
     celda.value = texto
@@ -165,11 +103,12 @@ def limpiar_hoja(ws):
 
 def cargar_datos_ols(ruta_archivo):
     """
-    Carga los datos de la hoja especificada en el archivo Excel y los renombra a ["X", "Y"].
-    Se detecta automáticamente la fila que contiene las etiquetas (por ejemplo, "LP" en la columna B)
+    Carga los datos de la hoja especificada en el archivo Excel, renombra las columnas a ["X", "Y"],
+    elimina filas en las que X o Y sean vacíos y muestra la cantidad de registros válidos.
+    Se detecta automáticamente la fila que contiene las etiquetas (ej. "LP" en la columna B)
     y se saltan las filas hasta la siguiente, donde comienzan los datos.
     """
-    filas_saltar = buscar_fila_encabezado(ruta_archivo, NOMBRE_HOJA) + 0
+    filas_saltar = buscar_fila_encabezado(ruta_archivo, NOMBRE_HOJA)
     df = pd.read_excel(
         ruta_archivo,
         sheet_name=NOMBRE_HOJA,
@@ -177,6 +116,8 @@ def cargar_datos_ols(ruta_archivo):
         skiprows=filas_saltar
     )
     df.columns = ["X", "Y"]
+    df = df.dropna(subset=["X", "Y"])
+    print(f"Se encontraron {len(df)} registros no vacíos en las columnas X y Y.")
     return df
 
 def realizar_regresion_OLS(df, usar_robusto=False, transformar=False):
@@ -198,11 +139,11 @@ def analizar_residuales(modelo):
     bp = het_breuschpagan(resid, modelo.model.exog)
     white_ = het_white(resid, modelo.model.exog)
     dict_res = {
-        "Shapiro-Wilk": f"{sw.statistic:.4f}",
-        "p-valor S-W": f"{sw.pvalue:.4f}",
-        "Durbin-Watson": f"{dw_stat:.4f}",
-        "Breusch-Pagan (p)": f"{bp[1]:.4f}",
-        "White (p)": f"{white_[1]:.4f}"
+        "Shapiro-Wilk": f"{sw.statistic:.4f}".replace(".", ","),
+        "p-valor S-W": f"{sw.pvalue:.4f}".replace(".", ","),
+        "Durbin-Watson": f"{dw_stat:.4f}".replace(".", ","),
+        "Breusch-Pagan (p)": f"{bp[1]:.4f}".replace(".", ","),
+        "White (p)": f"{white_[1]:.4f}".replace(".", ",")
     }
     return dict_res
 
@@ -210,19 +151,21 @@ def extraer_stats_ols(modelo):
     p = modelo.params
     pv = modelo.pvalues
     indices = list(p.index)
+    if len(indices) < 2:
+        return {"Mensaje": "Datos insuficientes para estimar la pendiente"}, {}
     intercept_name = indices[0]
     slope_name = indices[1]
     dict_coefs = {
-        "Intercepto": f"{p[intercept_name]:.4E}",
-        "Pendiente": f"{p[slope_name]:.4E}",
-        "p-valor Intercepto": f"{pv[intercept_name]:.4E}",
-        "p-valor Pendiente": f"{pv[slope_name]:.4E}"
+        "Intercepto": f"{p[intercept_name]:.4E}".replace(".", ","),
+        "Pendiente": f"{p[slope_name]:.4E}".replace(".", ","),
+        "p-valor Intercepto": f"{pv[intercept_name]:.4E}".replace(".", ","),
+        "p-valor Pendiente": f"{pv[slope_name]:.4E}".replace(".", ",")
     }
     dict_ajuste = {
-        "R²": f"{modelo.rsquared:.4f}",
-        "R² ajustado": f"{modelo.rsquared_adj:.4f}",
-        "AIC": f"{modelo.aic:.4f}",
-        "BIC": f"{modelo.bic:.4f}"
+        "R²": f"{modelo.rsquared:.4f}".replace(".", ","),
+        "R² ajustado": f"{modelo.rsquared_adj:.4f}".replace(".", ","),
+        "AIC": f"{modelo.aic:.4f}".replace(".", ","),
+        "BIC": f"{modelo.bic:.4f}".replace(".", ",")
     }
     return dict_coefs, dict_ajuste
 
@@ -285,21 +228,30 @@ def calcular_correlacion_ttest(df):
     else:
         conclusion = ("t_cal <= t(0.05). No se rechaza H0, no se evidencia correlación lineal significativa.")
     return {
-        "R": f"{r_value:.4f}",
-        "R²": f"{R2_value:.4f}",
-        "t_cal": f"{t_cal:.4f}",
-        "t(0.05)": f"{t_critical:.4f}",
+        "R": f"{r_value:.4f}".replace(".", ","),
+        "R²": f"{R2_value:.4f}".replace(".", ","),
+        "t_cal": f"{t_cal:.4f}".replace(".", ","),
+        "t(0.05)": f"{t_critical:.4f}".replace(".", ","),
         "Conclusión": conclusion
     }
 
 def analizar_segmento(df, etiqueta_segmento, ws, row_excel):
-    if df.empty:
-        return row_excel
+    if df.shape[0] < 2:
+        mensaje = f"Datos insuficientes para el segmento {etiqueta_segmento}"
+        print(mensaje)
+        ws.cell(row=row_excel, column=COLUMNA_INICIO_EXCEL, value=mensaje)
+        return row_excel + 2
 
     modelo_original = realizar_regresion_OLS(df)
     original_coefs, original_adjust = extraer_stats_ols(modelo_original)
+    if "Mensaje" in original_coefs:
+        mensaje = f"Segmento {etiqueta_segmento}: {original_coefs['Mensaje']}"
+        print(mensaje)
+        ws.cell(row=row_excel, column=COLUMNA_INICIO_EXCEL, value=mensaje)
+        return row_excel + 2
+
     dict_res_inicial = analizar_residuales(modelo_original)
-    p_sw = float(dict_res_inicial["p-valor S-W"])
+    p_sw = float(dict_res_inicial["p-valor S-W"].replace(",", "."))
     resid = modelo_original.resid
     bp_test = het_breuschpagan(resid, modelo_original.model.exog)
     white_test = het_white(resid, modelo_original.model.exog)
@@ -369,17 +321,18 @@ def analizar_segmento(df, etiqueta_segmento, ws, row_excel):
     row_excel = escribir_tabla_dict(ws, row_excel, col_start, original_adjust, "Bondad de Ajuste (Original)")
     row_excel = escribir_tabla_dict(ws, row_excel, col_start, dict_res, "Análisis de Residuales")
     row_excel = escribir_tabla_dict(ws, row_excel, col_start, corr_dict, "Análisis de Correlación")
+    
     texto_conclusion = (
         "Conclusiones:\n"
         f"{conclusion_lineal}\n\n"
         f"Supuestos del análisis: Normalidad de los residuales\n"
-        f"Valor p (Shapiro-Wilk): {p_sw_new:.4f} --> {normalidad_eval}\n"
+        f"Valor p (Shapiro-Wilk): {p_sw_new:.4f}".replace(".", ",") + f" --> {normalidad_eval}\n"
         "Revisar el gráfico Q-Q de los residuales.\n\n"
         f"Supuestos del análisis: Homocedasticidad (Prueba 1)\n"
-        f"Valor p (Breusch-Pagan): {p_bp_new:.4f} --> {homoced1_eval}\n"
+        f"Valor p (Breusch-Pagan): {p_bp_new:.4f}".replace(".", ",") + f" --> {homoced1_eval}\n"
         "Revisar el gráfico de residuales y el gráfico de escala.\n\n"
         f"Supuestos del análisis: Homocedasticidad (Prueba robusta)\n"
-        f"Valor p (Studentizada Breusch-Pagan): {p_white_new:.4f} --> {homoced2_eval}\n"
+        f"Valor p (Studentizada Breusch-Pagan): {p_white_new:.4f}".replace(".", ",") + f" --> {homoced2_eval}\n"
         "Revisar el gráfico de residuales y el gráfico de escala.\n\n"
         f"Resumen: {conclusion_supuestos}\n"
         f"{transform_info}\n\n"
@@ -388,22 +341,17 @@ def analizar_segmento(df, etiqueta_segmento, ws, row_excel):
         "Si |t_cal| > t(0.05), se rechaza H0 y se confirma la correlación lineal.\n\n"
         "Se recomienda revisar los gráficos (incluyendo el Q-Q de residuales) para confirmar visualmente."
     )
-    # Claves para formatear títulos en negrita y con estilo destacado.
     bold_keys = ["Conclusiones", "Supuestos", "Resumen", "H0", "Ha"]
-    # Definimos estilos adicionales para títulos y cuerpo de texto.
     title_font = Font(name="Calibri", size=11, bold=True, color="000080")
     body_font = Font(name="Calibri", size=11, bold=False, color="000000")
     title_fill = PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid")
     normal_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
 
-    # Escribimos cada línea en celdas combinadas de la columna E a M, aplicando estilos según corresponda.
     for line in texto_conclusion.splitlines():
         if line.strip() == "":
             row_excel += 1
             continue
-        ws.merge_cells(start_row=row_excel, start_column=5, end_row=row_excel, end_column=13)
         celda = ws.cell(row=row_excel, column=5, value=line)
-        # Aplica estilo de título si la línea inicia con alguna clave, de lo contrario aplica estilo normal.
         if any(line.strip().startswith(key) for key in bold_keys):
             celda.font = title_font
             celda.fill = title_fill
@@ -423,33 +371,35 @@ def analizar_ols_por_segmentos(ruta_excel):
         return
 
     wb = load_workbook(ruta_excel)
-    ws_linealidad = wb["Linealidad - no parametrico"]
-    # Combinar siempre las celdas A2:M2 para el título
-    ws_linealidad.merge_cells("A2:M2")
-    cell = ws_linealidad["A2"]
-    cell.value = "Estudio de linealidad"
+    ws_linealidad = wb[NOMBRE_HOJA]
+    limpiar_hoja(ws_linealidad)
+    # Combinar celdas en la parte superior para el título general en B1:L1
+    ws_linealidad.merge_cells("B1:L1")
+    cell = ws_linealidad.cell(row=1, column=2)
+    cell.value = "Estudio de Linealidad"
     cell.alignment = Alignment(horizontal="center", vertical="center")
     cell.font = Font(bold=True, color="FFFFFF", size=16)
     cell.fill = PatternFill(fill_type="solid", fgColor="00008B")
-    ws = wb[NOMBRE_HOJA]
-    limpiar_hoja(ws)
+    
     row_excel = FILA_INICIO_EXCEL
 
-    # Análisis para el segmento de valores NEGATIVOS
+    # Análisis por segmento negativo
     df_neg = df[df["X"] < 0].copy()
-    if not df_neg.empty:
-        df_neg = df_neg.groupby("X", as_index=False).mean()
-        row_excel = analizar_segmento(df_neg, "Negativos", ws, row_excel)
+    if not df_neg.empty and df_neg.shape[0] >= 2:
+        if df_neg["X"].nunique() >= 2:
+            df_neg = df_neg.groupby("X", as_index=False).mean()
+        row_excel = analizar_segmento(df_neg, "Negativos", ws_linealidad, row_excel)
     else:
-        print(f"{os.path.basename(ruta_excel)}: No hay datos negativos.")
+        print(f"{os.path.basename(ruta_excel)}: No hay datos negativos suficientes.")
 
-    # Análisis para el segmento de valores POSITIVOS
+    # Análisis por segmento positivo
     df_pos = df[df["X"] >= 0].copy()
-    if not df_pos.empty:
-        df_pos = df_pos.groupby("X", as_index=False).mean()
-        row_excel = analizar_segmento(df_pos, "Positivos", ws, row_excel)
+    if not df_pos.empty and df_pos.shape[0] >= 2:
+        if df_pos["X"].nunique() >= 2:
+            df_pos = df_pos.groupby("X", as_index=False).mean()
+        row_excel = analizar_segmento(df_pos, "Positivos", ws_linealidad, row_excel)
     else:
-        print(f"{os.path.basename(ruta_excel)}: No hay datos positivos.")
+        print(f"{os.path.basename(ruta_excel)}: No hay datos positivos suficientes.")
 
     wb.save(ruta_excel)
     for etiqueta in ["Negativos", "Positivos"]:
@@ -473,7 +423,7 @@ def format_p_value(p):
     if p < 1e-16:
         return "<1e-16"
     else:
-        return f"{p:.4E}"
+        return f"{p:.4E}".replace(".", ",")
 
 def lack_of_fit_test(df, xcol, ycol):
     df_ = df.copy()
@@ -494,7 +444,7 @@ def lack_of_fit_test(df, xcol, ycol):
         SSR_LOF += n_i * (y_mean - y_pred)**2
         SSR_PE  += ((g[ycol] - y_mean)**2).sum()
     
-    df_lof = n_levels - 2   # Dos parámetros estimados: intercepto y pendiente
+    df_lof = n_levels - 2
     df_pe  = N_total - n_levels
 
     if df_lof <= 0 or df_pe <= 0:
@@ -586,7 +536,7 @@ def process_file(file_path):
     plt.legend()
     plt.grid(True)
     plot_file = "regression_plot.png"
-    plt.savefig(plot_file)
+    plt.savefig(plot_file, dpi=100, bbox_inches='tight')
     plt.close()
 
     try:
@@ -645,7 +595,7 @@ def process_file(file_path):
     ws["A17"] = "Evaluaciones de Significancia"
     ws["A17"].font = Font(bold=True, size=14)
     ws["A18"] = "Coeficiente de correlación (R):"
-    ws["B18"] = round(R, 4)
+    ws["B18"] = f"{R:.4f}".replace(".", ",")
     ws["A19"] = "p-value correlación:"
     ws["B19"] = format_p_value(p_value_R) if not np.isnan(p_value_R) else "N/A"
     ws["A20"] = "Significancia de la correlación:"
@@ -655,19 +605,19 @@ def process_file(file_path):
     ws["A22"] = "Significancia ANOVA:"
     ws["B22"] = "Significativo" if signif_regresion else "No significativo"
     ws["A23"] = "Pendiente (b):"
-    ws["B23"] = round(b, 4)
+    ws["B23"] = f"{b:.4f}".replace(".", ",")
     ws["A24"] = "Significancia de la pendiente:"
     ws["B24"] = "Significativa" if signif_b else "No significativa"
     ws["A25"] = "Intercepto (a):"
-    ws["B25"] = round(a, 4)
+    ws["B25"] = f"{a:.4f}".replace(".", ",")
     ws["A26"] = "Significancia del intercepto:"
     ws["B26"] = "Significativo" if signif_a else "No significativo"
     ws["A27"] = "t para pendiente:"
-    ws["B27"] = round(t_b, 4)
+    ws["B27"] = f"{t_b:.4f}".replace(".", ",")
     ws["A28"] = "t para intercepto:"
-    ws["B28"] = round(t_a, 4)
+    ws["B28"] = f"{t_a:.4f}".replace(".", ",")
     ws["A29"] = "t crítico:"
-    ws["B29"] = round(t_crit, 4)
+    ws["B29"] = f"{t_crit:.4f}".replace(".", ",")
 
     ws["A31"] = "Evaluación de la Falta de Ajuste"
     ws["A31"].font = Font(bold=True, size=14)
@@ -703,7 +653,7 @@ def process_file(file_path):
     ws["A36"] = conclusion
     ws.merge_cells("A36:D39")
     ws["A36"].alignment = Alignment(vertical="center", horizontal="left", wrapText=True)
-
+    
     try:
         img = Img(plot_file)
         ws.add_image(img, "E38")
@@ -757,14 +707,14 @@ def process_file(file_path):
             plt.legend()
             plt.grid(True)
             plot_file_adj = "regression_plot_adj.png"
-            plt.savefig(plot_file_adj)
+            plt.savefig(plot_file_adj, dpi=100, bbox_inches='tight')
             plt.close()
 
             start_row = 40
             ws[f"A{start_row}"] = "Reanálisis con Transformación Logarítmica"
             ws[f"A{start_row}"].font = Font(bold=True, size=16)
             ws[f"A{start_row+1}"] = "Coeficiente de correlación (R):"
-            ws[f"B{start_row+1}"] = round(R_adj, 4)
+            ws[f"B{start_row+1}"] = f"{R_adj:.4f}".replace(".", ",")
             ws[f"A{start_row+2}"] = "p-value correlación:"
             ws[f"B{start_row+2}"] = format_p_value(p_value_R_adj) if not np.isnan(p_value_R_adj) else "N/A"
             ws[f"A{start_row+3}"] = "Significancia correlación:"
@@ -774,19 +724,19 @@ def process_file(file_path):
             ws[f"A{start_row+5}"] = "Significancia ANOVA:"
             ws[f"B{start_row+5}"] = "Significativo" if signif_regresion_adj else "No significativo"
             ws[f"A{start_row+6}"] = "Pendiente (b):"
-            ws[f"B{start_row+6}"] = round(b_adj, 4)
+            ws[f"B{start_row+6}"] = f"{b_adj:.4f}".replace(".", ",")
             ws[f"A{start_row+7}"] = "Significancia pendiente:"
             ws[f"B{start_row+7}"] = "Significativa" if signif_b_adj else "No significativa"
             ws[f"A{start_row+8}"] = "Intercepto (a):"
-            ws[f"B{start_row+8}"] = round(a_adj, 4)
+            ws[f"B{start_row+8}"] = f"{a_adj:.4f}".replace(".", ",")
             ws[f"A{start_row+9}"] = "Significancia intercepto:"
             ws[f"B{start_row+9}"] = "Significativo" if signif_a_adj else "No significativo"
             ws[f"A{start_row+10}"] = "t para pendiente:"
-            ws[f"B{start_row+10}"] = round(t_b_adj, 4)
+            ws[f"B{start_row+10}"] = f"{t_b_adj:.4f}".replace(".", ",")
             ws[f"A{start_row+11}"] = "t para intercepto:"
-            ws[f"B{start_row+11}"] = round(t_a_adj, 4)
+            ws[f"B{start_row+11}"] = f"{t_a_adj:.4f}".replace(".", ",")
             ws[f"A{start_row+12}"] = "t crítico:"
-            ws[f"B{start_row+12}"] = round(t_crit_adj, 4)
+            ws[f"B{start_row+12}"] = f"{t_crit_adj:.4f}".replace(".", ",")
             
             ws[f"A{start_row+13}"] = "Conclusiones (Transformación Logarítmica):"
             ws[f"A{start_row+13}"].font = Font(bold=True, size=14)
@@ -833,14 +783,7 @@ def process_file(file_path):
 
     return True, "Proceso completado"
 
-# =============================================================================
-# Función de prueba para listar los datos usados para el análisis
-# =============================================================================
 def listar_datos_prueba(ruta_archivo):
-    """
-    Carga y muestra en consola los datos de la hoja "Linealidad - no parametrico" (columnas B y C)
-    utilizando la detección automática de la fila que contiene las etiquetas.
-    """
     try:
         df = cargar_datos_ols(ruta_archivo)
         print("Listado de datos para análisis:")
@@ -851,9 +794,6 @@ def listar_datos_prueba(ruta_archivo):
         return None
 
 def prueba_listado_datos():
-    """
-    Solicita al usuario que seleccione el archivo Excel de prueba y lista los datos en consola.
-    """
     root = Tk()
     root.withdraw()
     ruta_prueba = filedialog.askopenfilename(
@@ -871,11 +811,7 @@ def prueba_listado_datos():
     else:
         print("La prueba de listado de datos NO se pudo ejecutar.")
 
-# =============================================================================
-# Función principal combinada: Ejecuta ambas aplicaciones secuencialmente
-# =============================================================================
 def main():
-    # Ejecutar la prueba para listar los datos usados en el análisis
     prueba_listado_datos()
     
     root = Tk()
@@ -914,5 +850,113 @@ def main():
     print(f"Archivos con error: {errores}")
     print("\nProceso completo. Revise los archivos Excel para ver los resultados.")
 
+def iniciar_interfaz():
+    root = tk.Tk()
+    root.title("APLICACIÓN PARA EL ANÁLISIS DE LINEALIDAD Y TEST DE SIGNIFICANCIA")
+    
+    # Marco de instrucciones
+    frame_instrucciones = tk.Frame(root)
+    frame_instrucciones.pack(padx=10, pady=10)
+    
+    instrucciones = (
+        "Propósito:\n"
+        "Esta aplicación automatiza el análisis estadístico de archivos Excel para evaluar la linealidad de un método analítico.\n\n"
+        "Instrucciones de uso:\n"
+        "1. Seleccione un archivo Excel para la prueba de listado de datos (opcional).\n"
+        "2. Seleccione la carpeta que contiene los archivos Excel a procesar.\n"
+        "3. Haga clic en 'Procesar' para ejecutar el análisis.\n"
+        "Los resultados se guardarán en los archivos Excel originales."
+    )
+    label_instrucciones = tk.Label(frame_instrucciones, text=instrucciones, justify="left", anchor="w")
+    label_instrucciones.pack()
+    
+    # Marco para archivo de prueba
+    frame_test = tk.Frame(root)
+    frame_test.pack(padx=10, pady=5, fill="x")
+    
+    label_test = tk.Label(frame_test, text="Archivo de prueba (listado de datos):")
+    label_test.pack(side="left")
+    
+    entry_test = tk.Entry(frame_test, width=50)
+    entry_test.pack(side="left", padx=5)
+    
+    def seleccionar_archivo():
+        file_path = filedialog.askopenfilename(
+            title="Seleccione el archivo Excel de prueba", 
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+        if file_path:
+            entry_test.delete(0, tk.END)
+            entry_test.insert(0, file_path)
+    button_test = tk.Button(frame_test, text="Seleccionar archivo", command=seleccionar_archivo)
+    button_test.pack(side="left", padx=5)
+    
+    # Marco para carpeta
+    frame_folder = tk.Frame(root)
+    frame_folder.pack(padx=10, pady=5, fill="x")
+    
+    label_folder = tk.Label(frame_folder, text="Carpeta con archivos Excel:")
+    label_folder.pack(side="left")
+    
+    entry_folder = tk.Entry(frame_folder, width=50)
+    entry_folder.pack(side="left", padx=5)
+    
+    def seleccionar_carpeta_gui():
+        folder = filedialog.askdirectory(title="Seleccione la carpeta con archivos Excel")
+        if folder:
+            entry_folder.delete(0, tk.END)
+            entry_folder.insert(0, folder)
+    button_folder = tk.Button(frame_folder, text="Seleccionar carpeta", command=seleccionar_carpeta_gui)
+    button_folder.pack(side="left", padx=5)
+    
+    # Función Procesar
+    def procesar():
+        test_file = entry_test.get()
+        folder_path = entry_folder.get()
+        
+        if test_file:
+            print("Ejecutando prueba de listado de datos...")
+            listar_datos_prueba(test_file)
+        else:
+            print("No se ha seleccionado un archivo de prueba.")
+        
+        if not folder_path:
+            messagebox.showerror("Error", "Debe seleccionar una carpeta con archivos Excel.")
+            return
+        
+        archivos = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
+                    if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith('.xlsx')]
+        if not archivos:
+            messagebox.showerror("Error", "No se encontraron archivos Excel en la carpeta seleccionada.")
+            return
+        
+        print("Iniciando Análisis de Linealidad (App 1)...")
+        for file_path in archivos:
+            print(f"Procesando archivo para Análisis OLS: {os.path.basename(file_path)}")
+            analizar_ols_por_segmentos(file_path)
+        print("Análisis de Linealidad completado.")
+        
+        print("Iniciando Test de Significancia - Linealidad (App 2)...")
+        procesados = 0
+        errores = 0
+        for file_path in archivos:
+            print(f"Procesando archivo para Test de Significancia: {os.path.basename(file_path)}")
+            result, _ = process_file(file_path)
+            if result:
+                print(f"{os.path.basename(file_path)} procesado correctamente en Test de Significancia.")
+                procesados += 1
+            else:
+                print(f"Error al procesar {os.path.basename(file_path)} en Test de Significancia.")
+                errores += 1
+        print("Proceso completado.")
+        messagebox.showinfo("Proceso completado", f"Archivos procesados correctamente: {procesados}\nArchivos con error: {errores}")
+    
+    button_procesar = tk.Button(root, text="Procesar", font=("Calibri", 12, "bold"), command=procesar)
+    button_procesar.pack(pady=10)
+    
+    root.mainloop()
+
 if __name__ == "__main__":
-    main()
+    iniciar_interfaz()
+    # Para ejecutar sin interfaz, se puede llamar a main()
+    # main()

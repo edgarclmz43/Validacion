@@ -202,7 +202,7 @@ def procesar_archivos(skiprows_values, output_directory, archivo_entries):
       - Se eliminan las filas sin un valor numérico en "LI" y se ordenan de menor a mayor.
       - Se crea una hoja temporal en el archivo de salida para pegar y ordenar los datos.
       - Luego se copian los datos de la hoja temporal (sin encabezado) a las columnas B y C de la hoja
-        "Linealidad - no parametrico", borrando los valores previos en ese rango.
+        "Linealidad - no parametrico", borrando los valores previos en ese rango, e insertando un encabezado.
     """
     archivos = [entry.get() for entry in archivo_entries]
     if any(not archivo for archivo in archivos):
@@ -290,10 +290,15 @@ def procesar_archivos(skiprows_values, output_directory, archivo_entries):
             for c_idx, value in enumerate(row, start=1):
                 ws_temp.cell(row=r_idx, column=c_idx, value=value)
 
-        # Borrar los datos previos en las columnas B y C de la hoja objetivo desde la fila 8 hasta la 1000
-        for r in range(8, 1001):
+        # Borrar los datos previos en las columnas B y C de la hoja objetivo desde la fila 7 hasta la 1000
+        for r in range(7, 1001):
             ws_target.cell(row=r, column=2).value = None
             ws_target.cell(row=r, column=3).value = None
+
+        # Insertar encabezado con el propósito e instrucciones en la hoja objetivo (fila 7)
+        ws_target.cell(row=7, column=2, value="LP")
+        ws_target.cell(row=7, column=3, value="LI")
+        # Puedes agregar más información de instrucciones en celdas adicionales si lo deseas.
 
         # Copiar los datos ordenados (sin encabezado) desde la hoja temporal a la hoja objetivo,
         # pegándolos en las columnas B y C a partir de la fila 8.
@@ -302,13 +307,11 @@ def procesar_archivos(skiprows_values, output_directory, archivo_entries):
         for r in range(2, len(rows) + 1):
             lp_val = ws_temp.cell(row=r, column=1).value  # Columna 1: LP
             li_val = ws_temp.cell(row=r, column=2).value  # Columna 2: LI
-            # Para LP, si es numérico, convertir a cadena y reemplazar punto por coma.
+            # Convertir LP a número si es posible
             try:
-                lp_num = float(lp_val)
-                lp_val = str(lp_num).replace('.', ',')
-            except:
-                if lp_val is not None:
-                    lp_val = str(lp_val).replace('.', ',')
+                lp_val = float(lp_val)
+            except (ValueError, TypeError):
+                lp_val = None
             ws_target.cell(row=target_row, column=2, value=lp_val)
             ws_target.cell(row=target_row, column=3, value=li_val)
             target_row += 1
@@ -332,7 +335,7 @@ def procesar_archivos(skiprows_values, output_directory, archivo_entries):
 
 # ===================== Configuración de la Ventana Principal con Scroll =====================
 root = Tk()
-root.title("Extractor de Datos de Excel - Linealidad No Paramétrico")
+root.title("Extractor de Datos de Excel - Linealidad Paramétrico")
 root.geometry("900x700")
 
 canvas = Canvas(root)
