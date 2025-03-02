@@ -30,7 +30,7 @@ def buscar_fila_encabezado(ruta_archivo, sheet_name):
     """
     Busca en la columna B la primera celda que contenga 'LP' (sin distinguir mayúsculas)
     y devuelve el número de filas a saltar (índice, donde la primera fila es 0).
-    Si no se encuentra, devuelve 6 (lo que equivale a que la cabecera está en la fila 7).
+    Si no se encuentra, devuelve 6 (equivalente a cabecera en la fila 7).
     """
     df = pd.read_excel(ruta_archivo, sheet_name=sheet_name, header=None)
     for i, valor in enumerate(df.iloc[:, 1]):
@@ -40,6 +40,25 @@ def buscar_fila_encabezado(ruta_archivo, sheet_name):
 
 FILA_INICIO_EXCEL = 40    # Fila en la hoja Excel donde se empezará a escribir los resultados
 COLUMNA_INICIO_EXCEL = 5   # Columna en la hoja Excel donde se empezará a escribir los resultados
+
+# =============================================================================
+# Función para aplicar transformación Box-Cox o Yeo-Johnson
+# =============================================================================
+def aplicar_transformacion_boxcox(data):
+    """
+    Aplica la transformación Box-Cox si todos los datos son positivos.
+    Si existen valores no positivos, se utiliza la transformación Yeo-Johnson,
+    que puede manejar datos con ceros o negativos.
+    Devuelve la data transformada, el lambda y el método utilizado.
+    """
+    data = np.array(data)
+    if np.min(data) <= 0:
+        transformed, lam = stats.yeojohnson(data)
+        method = "Yeo-Johnson"
+    else:
+        transformed, lam = stats.boxcox(data)
+        method = "Box-Cox"
+    return transformed, lam, method
 
 # =============================================================================
 # Funciones para el Análisis de Linealidad (App 1)
@@ -207,6 +226,7 @@ def generar_grafico_y_guardar(df, modelo, titulo, filename):
     plt.close()
 
 def calcular_correlacion_ttest(df):
+    # Se usa el tamaño total de la muestra (len(df)), no .nunique()
     m = len(df)
     if m < 3:
         return {
@@ -264,7 +284,7 @@ def analizar_segmento(df, etiqueta_segmento, ws, row_excel):
         modelo_alt = realizar_regresion_OLS(df, usar_robusto=True, transformar=True)
         modelo = modelo_alt
         data_used = df.copy()
-        data_used["Y_trans"] = np.log(df["Y"] + 1)
+        data_used["Y_trans"] = np.log(df["Y"] + 1)  # Se mantiene para graficar, si se desea
     else:
         modelo = modelo_original
         data_used = df
@@ -300,12 +320,12 @@ def analizar_segmento(df, etiqueta_segmento, ws, row_excel):
     else:
         conclusion_supuestos = f"NO CUMPLE: El modelo no cumple con los siguientes supuestos: {', '.join(fails)}."
         if alt_analysis:
-            conclusion_supuestos += " Se aplicó transformación logarítmica y errores robustos."
+            conclusion_supuestos += " Se aplicó transformación y errores robustos."
 
     if alt_analysis:
-        transform_info = "Nota: Se aplicó transformación logarítmica a Y (log(Y+1)) y errores robustos."
+        transform_info = "Nota: Se aplicó transformación alternativa."
     else:
-        transform_info = "Nota: No se aplicó transformación logarítmica; se utilizó el modelo original."
+        transform_info = "Nota: No se aplicó transformación; se utilizó el modelo original."
 
     corr_dict = calcular_correlacion_ttest(df)
     png_name = f"temp_{etiqueta_segmento}.png"
@@ -373,12 +393,18 @@ def analizar_ols_por_segmentos(ruta_excel):
     wb = load_workbook(ruta_excel)
     ws_linealidad = wb[NOMBRE_HOJA]
     limpiar_hoja(ws_linealidad)
-    # Combinar celdas en la parte superior para el título general en B1:L1
-    ws_linealidad.merge_cells("B1:L1")
+    # Encabezado ampliado con propósito e instrucciones
+    ws_linealidad.merge_cells("B1:L3")
     cell = ws_linealidad.cell(row=1, column=2)
-    cell.value = "Estudio de Linealidad"
-    cell.alignment = Alignment(horizontal="center", vertical="center")
-    cell.font = Font(bold=True, color="FFFFFF", size=16)
+    cell.value = (
+        "Propósito: Evaluar la linealidad del método analítico mediante análisis OLS y test de significancia.\n"
+        "Instrucciones:\n"
+        "1. Se eliminan outliers basados en el IQR.\n"
+        "2. Se realizan análisis de regresión y evaluación de supuestos.\n"
+        "3. Si se detecta falta de ajuste, se aplica una transformación alternativa (Box-Cox o Yeo-Johnson) para reanálisis."
+    )
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    cell.font = Font(bold=True, color="FFFFFF", size=14)
     cell.fill = PatternFill(fill_type="solid", fgColor="00008B")
     
     row_excel = FILA_INICIO_EXCEL
@@ -497,7 +523,9 @@ def process_file(file_path):
     X_data = df["LP"].values
     Y_data = df["LI"].values
     alpha = 0.05
-    m = df["LP"].nunique()
+
+    # Se usa el total de registros (len(df))
+    m = len(df)
     R = np.corrcoef(X_data, Y_data)[0, 1]
     t_cal_R = abs(R) * np.sqrt((m - 2) / (1 - R**2)) if (1 - R**2) > 0 else np.inf
     df_t = m - 2
@@ -589,9 +617,10 @@ def process_file(file_path):
     ws["B13"] = n_registros_despues
     ws["A14"] = "Registros eliminados:"
     ws["B14"] = registros_eliminados
-    ws["A15"] = "Transformación logarítmica aplicada:"
-    ws["B15"] = "No"
-
+    # Se indica la transformación aplicada (si se realizó)
+    ws["A15"] = "Transformación aplicada:"
+    # Se definirá transformation_info más adelante
+     
     ws["A17"] = "Evaluaciones de Significancia"
     ws["A17"].font = Font(bold=True, size=14)
     ws["A18"] = "Coeficiente de correlación (R):"
@@ -654,126 +683,126 @@ def process_file(file_path):
     ws.merge_cells("A36:D39")
     ws["A36"].alignment = Alignment(vertical="center", horizontal="left", wrapText=True)
     
+    # Inserción del gráfico original
     try:
         img = Img(plot_file)
         ws.add_image(img, "E38")
     except Exception as e:
         print(f"Error al insertar el gráfico original en {file_path}: {e}")
 
+    # Bloque de reanálisis con transformación alternativa en caso de falta de ajuste
     transformation_applied = False
+    transformation_info = "No se aplicó transformación."
     if falta_ajuste:
-        if (df["LP"] > 0).all() and (df["LI"] > 0).all():
-            print(f"En {file_path} se detectó falta de ajuste. Aplicando transformación logarítmica para reanálisis.")
-            df["LP_adj"] = np.log(df["LP"])
-            df["LI_adj"] = np.log(df["LI"])
-            transformation_applied = True
+        print(f"En {file_path} se detectó falta de ajuste. Aplicando transformación Box-Cox (o Yeo-Johnson si es necesario) para reanálisis.")
+        LP_adj, lam_lp, method_lp = aplicar_transformacion_boxcox(df["LP"].values)
+        LI_adj, lam_li, method_li = aplicar_transformacion_boxcox(df["LI"].values)
+        df["LP_adj"] = LP_adj
+        df["LI_adj"] = LI_adj
+        transformation_applied = True
+        transformation_info = f"{method_lp} (λ={lam_lp:.4f}) para LP y {method_li} (λ={lam_li:.4f}) para LI"
+    # Actualizar el reporte de valores atípicos con la transformación aplicada
+    ws["B15"] = transformation_info
 
-            X_data_adj = df["LP_adj"].values
-            Y_data_adj = df["LI_adj"].values
-            R_adj = np.corrcoef(X_data_adj, Y_data_adj)[0, 1]
-            if (1 - R_adj**2) > 0:
-                t_cal_R_adj = abs(R_adj) * np.sqrt((m - 2) / (1 - R_adj**2))
-                df_t_adj = m - 2
-                p_value_R_adj = stats.t.sf(t_cal_R_adj, df_t_adj) * 2
-                t_tabla_R_adj = stats.t.ppf(1 - alpha/2, df_t_adj)
-                signif_R_adj = t_cal_R_adj > t_tabla_R_adj
-            else:
-                t_cal_R_adj, t_tabla_R_adj, p_value_R_adj = np.nan, np.nan, np.nan
-                signif_R_adj = False
+    if transformation_applied:
+        model_adj = smf.ols("LI_adj ~ LP_adj", data=df).fit()
+        anova_table_adj = sm.stats.anova_lm(model_adj, typ=2)
+        p_anova_reg_adj = anova_table_adj.loc["LP_adj", "PR(>F)"] if "LP_adj" in anova_table_adj.index else np.nan
+        signif_regresion_adj = (p_anova_reg_adj < alpha) if not np.isnan(p_anova_reg_adj) else False
 
-            model_adj = smf.ols("LI_adj ~ LP_adj", data=df).fit()
-            anova_table_adj = sm.stats.anova_lm(model_adj, typ=2)
-            p_anova_reg_adj = anova_table_adj.loc["LP_adj", "PR(>F)"] if "LP_adj" in anova_table_adj.index else np.nan
-            signif_regresion_adj = (p_anova_reg_adj < alpha) if not np.isnan(p_anova_reg_adj) else False
+        b_adj = model_adj.params.get("LP_adj", np.nan)
+        a_adj = model_adj.params.get("Intercept", np.nan)
+        sb_adj = model_adj.bse.get("LP_adj", np.nan)
+        sa_adj = model_adj.bse.get("Intercept", np.nan)
+        t_crit_adj = stats.t.ppf(1 - alpha/2, len(df)-2) if (len(df)-2) > 0 else np.nan
+        t_b_adj = abs(b_adj) / sb_adj if sb_adj != 0 else np.inf
+        t_a_adj = abs(a_adj) / sa_adj if sa_adj != 0 else np.inf
+        signif_b_adj = (t_b_adj > t_crit_adj) if not np.isnan(t_crit_adj) else False
+        signif_a_adj = (t_a_adj > t_crit_adj) if not np.isnan(t_crit_adj) else False
 
-            b_adj = model_adj.params.get("LP_adj", np.nan)
-            a_adj = model_adj.params.get("Intercept", np.nan)
-            sb_adj = model_adj.bse.get("LP_adj", np.nan)
-            sa_adj = model_adj.bse.get("Intercept", np.nan)
-            t_crit_adj = stats.t.ppf(1 - alpha/2, len(df)-2) if (len(df)-2) > 0 else np.nan
-            t_b_adj = abs(b_adj) / sb_adj if sb_adj != 0 else np.inf
-            t_a_adj = abs(a_adj) / sa_adj if sa_adj != 0 else np.inf
-            signif_b_adj = (t_b_adj > t_crit_adj) if not np.isnan(t_crit_adj) else False
-            signif_a_adj = (t_a_adj > t_crit_adj) if not np.isnan(t_crit_adj) else False
+        plt.figure(figsize=(8, 6))
+        plt.scatter(df["LP_adj"], df["LI_adj"], color="green", label="Datos ajustados")
+        x_vals_adj = np.linspace(np.min(df["LP_adj"]), np.max(df["LP_adj"]), 100)
+        y_vals_adj = a_adj + b_adj * x_vals_adj
+        plt.plot(x_vals_adj, y_vals_adj, color="purple", label="Línea de regresión ajustada")
+        plt.xlabel("Transformación de LP")
+        plt.ylabel("Transformación de LI")
+        plt.title("Gráfico de dispersión y regresión (Datos Ajustados)")
+        plt.legend()
+        plt.grid(True)
+        plot_file_adj = "regression_plot_adj.png"
+        plt.savefig(plot_file_adj, dpi=100, bbox_inches='tight')
+        plt.close()
 
-            plt.figure(figsize=(8, 6))
-            plt.scatter(X_data_adj, Y_data_adj, color="green", label="Datos ajustados")
-            x_vals_adj = np.linspace(min(X_data_adj), max(X_data_adj), 100)
-            y_vals_adj = a_adj + b_adj * x_vals_adj
-            plt.plot(x_vals_adj, y_vals_adj, color="purple", label="Línea de regresión ajustada")
-            plt.xlabel("log(LP)")
-            plt.ylabel("log(LI)")
-            plt.title("Gráfico de dispersión y regresión (Datos Ajustados)")
-            plt.legend()
-            plt.grid(True)
-            plot_file_adj = "regression_plot_adj.png"
-            plt.savefig(plot_file_adj, dpi=100, bbox_inches='tight')
-            plt.close()
-
-            start_row = 40
-            ws[f"A{start_row}"] = "Reanálisis con Transformación Logarítmica"
-            ws[f"A{start_row}"].font = Font(bold=True, size=16)
-            ws[f"A{start_row+1}"] = "Coeficiente de correlación (R):"
-            ws[f"B{start_row+1}"] = f"{R_adj:.4f}".replace(".", ",")
-            ws[f"A{start_row+2}"] = "p-value correlación:"
-            ws[f"B{start_row+2}"] = format_p_value(p_value_R_adj) if not np.isnan(p_value_R_adj) else "N/A"
-            ws[f"A{start_row+3}"] = "Significancia correlación:"
-            ws[f"B{start_row+3}"] = "Significativo" if signif_R_adj else "No significativo"
-            ws[f"A{start_row+4}"] = "p-value ANOVA:"
-            ws[f"B{start_row+4}"] = format_p_value(p_anova_reg_adj) if not np.isnan(p_anova_reg_adj) else "N/A"
-            ws[f"A{start_row+5}"] = "Significancia ANOVA:"
-            ws[f"B{start_row+5}"] = "Significativo" if signif_regresion_adj else "No significativo"
-            ws[f"A{start_row+6}"] = "Pendiente (b):"
-            ws[f"B{start_row+6}"] = f"{b_adj:.4f}".replace(".", ",")
-            ws[f"A{start_row+7}"] = "Significancia pendiente:"
-            ws[f"B{start_row+7}"] = "Significativa" if signif_b_adj else "No significativa"
-            ws[f"A{start_row+8}"] = "Intercepto (a):"
-            ws[f"B{start_row+8}"] = f"{a_adj:.4f}".replace(".", ",")
-            ws[f"A{start_row+9}"] = "Significancia intercepto:"
-            ws[f"B{start_row+9}"] = "Significativo" if signif_a_adj else "No significativo"
-            ws[f"A{start_row+10}"] = "t para pendiente:"
-            ws[f"B{start_row+10}"] = f"{t_b_adj:.4f}".replace(".", ",")
-            ws[f"A{start_row+11}"] = "t para intercepto:"
-            ws[f"B{start_row+11}"] = f"{t_a_adj:.4f}".replace(".", ",")
-            ws[f"A{start_row+12}"] = "t crítico:"
-            ws[f"B{start_row+12}"] = f"{t_crit_adj:.4f}".replace(".", ",")
-            
-            ws[f"A{start_row+13}"] = "Conclusiones (Transformación Logarítmica):"
-            ws[f"A{start_row+13}"].font = Font(bold=True, size=14)
-            if signif_regresion_adj:
-                ws[f"A{start_row+14}"] = (
-                    "El reanálisis con transformación logarítmica confirma la existencia de una relación significativa entre log(LP) y log(LI). "
-                    "La transformación permitió mejorar el ajuste del modelo, evidenciado por una prueba de falta de ajuste menos problemática."
-                )
-            else:
-                ws[f"A{start_row+14}"] = (
-                    "El reanálisis con transformación logarítmica no confirma de forma robusta una relación significativa, "
-                    "lo que sugiere que se deben explorar otros modelos o transformaciones."
-                )
-            ws.merge_cells("A54:C57")
-            ws["A54"].alignment = Alignment(vertical="center", horizontal="left", wrapText=True)
-            
-            try:
-                img_adj = Img(plot_file_adj)
-                ws.add_image(img_adj, "D58")
-            except Exception as e:
-                print(f"Error al insertar el gráfico de reanálisis en {file_path}: {e}")
-            
-            table_start_row = start_row + 18
-            ws[f"A{table_start_row}"] = "Tabla de Datos Ajustados"
-            ws[f"A{table_start_row}"].font = Font(bold=True, size=14)
-            ws[f"A{table_start_row+1}"] = "Índice"
-            ws[f"B{table_start_row+1}"] = "LP ajustado"
-            ws[f"C{table_start_row+1}"] = "LI ajustado"
-            
-            current_row = table_start_row + 2
-            for idx, row in df.iterrows():
-                ws[f"A{current_row}"] = idx
-                ws[f"B{current_row}"] = row["LP_adj"] if "LP_adj" in row else ""
-                ws[f"C{current_row}"] = row["LI_adj"] if "LI_adj" in row else ""
-                current_row += 1
+        start_row = 40
+        ws[f"A{start_row}"] = "Reanálisis con Transformación Alternativa"
+        ws[f"A{start_row}"].font = Font(bold=True, size=16)
+        ws[f"A{start_row+1}"] = "Coeficiente de correlación (R):"
+        R_adj = np.corrcoef(df["LP_adj"], df["LI_adj"])[0, 1]
+        ws[f"B{start_row+1}"] = f"{R_adj:.4f}".replace(".", ",")
+        # Se calcula el t para la correlación transformada, usando len(df) como m
+        if (1 - R_adj**2) > 0:
+            t_cal_R_adj = abs(R_adj) * np.sqrt((m - 2) / (1 - R_adj**2))
+            p_value_R_adj = stats.t.sf(t_cal_R_adj, m-2) * 2
         else:
-            print(f"No se puede aplicar la transformación logarítmica en {file_path} por valores no positivos.")
+            t_cal_R_adj, p_value_R_adj = np.nan, np.nan
+        ws[f"A{start_row+2}"] = "p-value correlación:"
+        ws[f"B{start_row+2}"] = format_p_value(p_value_R_adj) if not np.isnan(p_value_R_adj) else "N/A"
+        ws[f"A{start_row+3}"] = "Significancia correlación:"
+        ws[f"B{start_row+3}"] = "Significativo" if t_cal_R_adj > stats.t.ppf(1 - alpha/2, m-2) else "No significativo"
+        ws[f"A{start_row+4}"] = "p-value ANOVA:"
+        ws[f"B{start_row+4}"] = format_p_value(p_anova_reg_adj) if not np.isnan(p_anova_reg_adj) else "N/A"
+        ws[f"A{start_row+5}"] = "Significancia ANOVA:"
+        ws[f"B{start_row+5}"] = "Significativo" if signif_regresion_adj else "No significativo"
+        ws[f"A{start_row+6}"] = "Pendiente (b):"
+        ws[f"B{start_row+6}"] = f"{b_adj:.4f}".replace(".", ",")
+        ws[f"A{start_row+7}"] = "Significancia pendiente:"
+        ws[f"B{start_row+7}"] = "Significativa" if signif_b_adj else "No significativa"
+        ws[f"A{start_row+8}"] = "Intercepto (a):"
+        ws[f"B{start_row+8}"] = f"{a_adj:.4f}".replace(".", ",")
+        ws[f"A{start_row+9}"] = "Significancia intercepto:"
+        ws[f"B{start_row+9}"] = "Significativo" if signif_a_adj else "No significativo"
+        ws[f"A{start_row+10}"] = "t para pendiente:"
+        ws[f"B{start_row+10}"] = f"{t_b_adj:.4f}".replace(".", ",")
+        ws[f"A{start_row+11}"] = "t para intercepto:"
+        ws[f"B{start_row+11}"] = f"{t_a_adj:.4f}".replace(".", ",")
+        ws[f"A{start_row+12}"] = "t crítico:"
+        ws[f"B{start_row+12}"] = f"{t_crit_adj:.4f}".replace(".", ",")
+            
+        ws[f"A{start_row+13}"] = "Conclusiones (Transformación Alternativa):"
+        ws[f"A{start_row+13}"].font = Font(bold=True, size=14)
+        if signif_regresion_adj:
+            ws[f"A{start_row+14}"] = (
+                "El reanálisis con transformación alternativa confirma la existencia de una relación significativa entre las variables transformadas. "
+                "La transformación aplicada fue: " + transformation_info
+            )
+        else:
+            ws[f"A{start_row+14}"] = (
+                "El reanálisis con transformación alternativa no confirma de forma robusta una relación significativa, "
+                "lo que sugiere que se deben explorar otros modelos o transformaciones."
+            )
+        ws.merge_cells("A54:C57")
+        ws["A54"].alignment = Alignment(vertical="center", horizontal="left", wrapText=True)
+            
+        try:
+            img_adj = Img(plot_file_adj)
+            ws.add_image(img_adj, "D58")
+        except Exception as e:
+            print(f"Error al insertar el gráfico de reanálisis en {file_path}: {e}")
+            
+        table_start_row = start_row + 18
+        ws[f"A{table_start_row}"] = "Tabla de Datos Ajustados"
+        ws[f"A{table_start_row}"].font = Font(bold=True, size=14)
+        ws[f"A{table_start_row+1}"] = "Índice"
+        ws[f"B{table_start_row+1}"] = "LP ajustado"
+        ws[f"C{table_start_row+1}"] = "LI ajustado"
+            
+        current_row = table_start_row + 2
+        for idx, row in df.iterrows():
+            ws[f"A{current_row}"] = idx
+            ws[f"B{current_row}"] = row["LP_adj"] if "LP_adj" in row else ""
+            ws[f"C{current_row}"] = row["LI_adj"] if "LI_adj" in row else ""
+            current_row += 1
 
     try:
         wb.save(file_path)

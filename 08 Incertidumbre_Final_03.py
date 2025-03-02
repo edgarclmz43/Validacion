@@ -6,29 +6,26 @@ Descripción:
     Esta aplicación procesa archivos Excel que contengan hojas específicas para
     generar un estudio de incertidumbre conforme a la norma ISO 21748. En cada
     archivo se buscan las siguientes hojas:
-    
-      - "sr ysR(Método) ISO 5725": Contiene datos y fórmulas relacionadas con las mediciones.
-      - "Estudio Veracidad": Contiene valores de distribuciones y otros parámetros.
-    
+        - "sr ysR(Método) ISO 5725": Contiene datos y fórmulas relacionadas con las mediciones.
+        - "Estudio Veracidad": Contiene valores de distribuciones y otros parámetros.
+
     Una vez verificado que existan estas hojas, la aplicación elimina (si ya existe)
     la hoja "Estudio Incertidumbre" para crear una nueva que incorpora el análisis,
     dividido en las siguientes secciones:
-    
-      A) Incertidumbre y veracidad por técnico.
-      B) Estimación de la incertidumbre.
-      C) Procedimiento de comparación.
-      D) Descripción, hipótesis, evaluación y conclusión.
-    
+        A) Incertidumbre y veracidad por técnico.
+        B) Estimación de la incertidumbre.
+        C) Procedimiento de comparación.
+        D) Descripción, hipótesis, evaluación y conclusión.
+
     La hoja "Estudio Incertidumbre" se genera sin alterar las fórmulas de las hojas originales,
     utilizando la versión "data_only" para extraer los valores calculados.
 
 Uso:
-    1. Ejecute este script.
-    2. Se abrirá una ventana para seleccionar la carpeta que contiene los archivos Excel.
-    3. La aplicación procesará cada archivo Excel con extensión .xlsx, .xlsm, .xltx o .xltm.
-    4. Si el archivo ya contiene la hoja "Estudio Incertidumbre", ésta se eliminará antes de crearla.
-    5. Los archivos se actualizarán con la nueva hoja de análisis.
-    
+    1. Ejecutar la aplicación.
+    2. Seleccionar la carpeta con los archivos Excel.
+    3. Presionar "Procesar Archivos".
+    4. Los archivos se actualizarán con la hoja "Estudio Incertidumbre".
+
 Requisitos:
     - Python 3.x
     - Módulos: os, tkinter, openpyxl, math, scipy.stats
@@ -43,7 +40,7 @@ Fecha:
 
 import os
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 import openpyxl
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
@@ -52,13 +49,13 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 from openpyxl.cell.cell import MergedCell  # Para identificar celdas combinadas
 import math
 import scipy.stats as stats
+from tkinter import ttk
 
 def set_column_widths(ws):
     """
     Ajusta los anchos de columnas para mejorar la presentación en la hoja.
-    
-    Parámetros:
-        ws: Objeto de la hoja de Excel.
+
+    :param ws: Objeto de la hoja de Excel.
     """
     widths = {
         'A': 3, 'B': 12, 'C': 14, 'D': 14, 'E': 14,
@@ -70,9 +67,8 @@ def set_column_widths(ws):
 def style_header(cell):
     """
     Aplica estilos de encabezado a una celda (fuente, relleno y borde).
-    
-    Parámetros:
-        cell: Objeto de la celda a formatear.
+
+    :param cell: Objeto de la celda a formatear.
     """
     cell.font = Font(bold=True, color="000000")
     cell.fill = PatternFill("solid", fgColor="B7DEE8")
@@ -83,9 +79,8 @@ def style_header(cell):
 def style_data_cell(cell):
     """
     Aplica un borde fino y alineación centrada a una celda de datos.
-    
-    Parámetros:
-        cell: Objeto de la celda a formatear.
+
+    :param cell: Objeto de la celda a formatear.
     """
     thin = Side(border_style="thin", color="000000")
     cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -94,13 +89,12 @@ def style_data_cell(cell):
 def crear_tabla(ws, ref, table_name):
     """
     Crea y añade una tabla con estilo al rango indicado en la hoja.
-    
+
     Si ya existe una tabla con ese nombre, se elimina antes de crear la nueva.
-    
-    Parámetros:
-        ws: Objeto de la hoja de Excel.
-        ref: Rango de celdas en formato Excel (por ejemplo, "B5:I8").
-        table_name: Nombre que se asignará a la tabla.
+
+    :param ws: Objeto de la hoja de Excel.
+    :param ref: Rango de celdas en formato Excel (p. ej., "B5:I8").
+    :param table_name: Nombre que se asignará a la tabla.
     """
     existing_tables = [t for t in ws._tables if isinstance(t, Table) and t.name == table_name]
     for t in existing_tables:
@@ -116,18 +110,15 @@ def crear_tabla(ws, ref, table_name):
     table.tableStyleInfo = style
     ws.add_table(table)
 
-def procesar_excel(archivo, hoja_origen, hoja_destino):
+def procesar_excel(archivo, hoja_origen="sr ysR(Método) ISO 5725", hoja_destino="Estudio Incertidumbre"):
     """
     Procesa un archivo Excel: extrae datos, realiza cálculos y genera la hoja 'Estudio Incertidumbre'
     sin alterar las fórmulas en las hojas originales.
-    
-    Parámetros:
-        archivo: Ruta completa del archivo Excel.
-        hoja_origen: Nombre de la hoja de origen que contiene datos y fórmulas ("sr ysR(Método) ISO 5725").
-        hoja_destino: Nombre de la hoja donde se generará el estudio (generalmente "Estudio Incertidumbre").
-    
-    Retorna:
-        La ruta del archivo procesado o None en caso de error.
+
+    :param archivo: Ruta completa del archivo Excel.
+    :param hoja_origen: Nombre de la hoja de origen que contiene datos y fórmulas.
+    :param hoja_destino: Nombre de la hoja donde se generará el estudio.
+    :return: La ruta del archivo procesado o mensaje de error.
     """
     try:
         # Cargar el libro original para preservar las fórmulas
@@ -135,24 +126,21 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
         # Cargar el libro en modo data_only para extraer los valores calculados
         wb_data = load_workbook(archivo, data_only=True)
     except Exception as e:
-        print(f"Error al cargar el archivo '{archivo}': {e}")
-        return None
+        return f"Error al cargar '{archivo}': {e}"
 
     # --- Verificar y eliminar la hoja "Estudio Incertidumbre" si ya existe ---
-    if "Estudio Incertidumbre" in wb.sheetnames:
-        ws_temp = wb["Estudio Incertidumbre"]
+    if hoja_destino in wb.sheetnames:
+        ws_temp = wb[hoja_destino]
         wb.remove(ws_temp)
 
     # Verificar la existencia de las hojas requeridas
     if hoja_origen not in wb.sheetnames:
-        print(f"La hoja '{hoja_origen}' no existe en el archivo '{archivo}'.")
-        return None
+        return f"La hoja '{hoja_origen}' no existe en el archivo '{archivo}'."
     if "Estudio Veracidad" not in wb.sheetnames:
-        print(f"La hoja 'Estudio Veracidad' no existe en el archivo '{archivo}'.")
-        return None
+        return f"La hoja 'Estudio Veracidad' no existe en el archivo '{archivo}'."
 
     # Obtener las hojas: la original (con fórmulas intactas) y la de datos calculados
-    hoja_sr      = wb[hoja_origen]      # Con fórmulas intactas
+    hoja_sr = wb[hoja_origen]          # Con fórmulas intactas
     hoja_sr_data = wb_data[hoja_origen]   # Con valores calculados
     hoja_veracidad = wb["Estudio Veracidad"]
 
@@ -176,16 +164,21 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
     # ========================
     # SECCIÓN A: INCERTIDUMBRE – VERACIDAD POR TÉCNICO
     # ========================
-    headers_A = [("Niveles", "B5"), ("Técnico 1", "C5"), ("Técnico 2", "D5"),
-                 ("Técnico 3", "E5"), ("Técnico 4", "F5"),
-                 ("Umax", "G5"), ("Umin", "H5"), ("%U≤ 5 %", "I5")]
+    headers_A = [
+        ("Niveles", "B5"), ("Técnico 1", "C5"), ("Técnico 2", "D5"),
+        ("Técnico 3", "E5"), ("Técnico 4", "F5"),
+        ("Umax", "G5"), ("Umin", "H5"), ("%U≤ 5 %", "I5")
+    ]
     for text, celda in headers_A:
         ws[celda] = str(text)
         style_header(ws[celda])
+
     for i, nivel in enumerate(niveles):
         cell = ws[f"B{6+i}"]
         cell.value = nivel
         style_data_cell(cell)
+
+    # Mapear celdas de "Estudio Veracidad" a celdas del nuevo informe
     distribuciones = {
         "C6": "M4", "C7": "M5", "C8": "M6",
         "D6": "M7", "D7": "M8", "D8": "M9",
@@ -195,6 +188,8 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
     for celda_dest, celda_origen in distribuciones.items():
         ws[celda_dest] = hoja_veracidad[celda_origen].value
         style_data_cell(ws[celda_dest])
+
+    # Calcular Umax, Umin y si cumple para cada fila
     for fila in range(6, 9):
         valores = []
         for col in ["C", "D", "E"]:
@@ -205,17 +200,20 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
         cell_Umax = ws[f"G{fila}"]
         cell_Umax.value = Umax
         if Umax is not None:
-            cell_Umax.number_format = "0.0E+0"
+            cell_Umax.number_format = "0.00E+0"
         style_data_cell(cell_Umax)
+
         Umin = min(valores) if valores else None
         cell_Umin = ws[f"H{fila}"]
         cell_Umin.value = Umin
         if Umin is not None:
-            cell_Umin.number_format = "0.0E+0"
+            cell_Umin.number_format = "0.00E+0"
         style_data_cell(cell_Umin)
+
         cell_cond = ws[f"I{fila}"]
         cell_cond.value = "Cumple" if (Umax is not None and Umax <= 5) else "No Cumple"
         style_data_cell(cell_cond)
+
     crear_tabla(ws, "B5:I8", "Tabla_Incertidumbre_Veracidad")
 
     # ========================
@@ -226,31 +224,39 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
                  "(apartado 6, GTC 142 (ISO 21748))")
     ws["B10"].alignment = Alignment(wrapText=True, horizontal="center", vertical="center")
     ws["B10"].font = Font(bold=True, color="000080")
+
     headers_B = [("Valor evaluado", "C13"), ("Uref", "D13"),
                  ("Sr", "E13"), ("Umed", "F13"), ("U(y)", "G13")]
     for text, celda in headers_B:
         ws[celda] = str(text)
         style_header(ws[celda])
+
     # Extraer los valores numéricos ya calculados de las celdas F69, G69 y H69 usando la versión data_only
     sr_values = [
         hoja_sr_data["F69"].value,
         hoja_sr_data["G69"].value,
         hoja_sr_data["H69"].value
     ]
-    print("Valores extraídos de sr:", sr_values)
+
+    # Debug print (opcional)
+    # print("Valores extraídos de sr:", sr_values)
+
     for i in range(3):
         fila_tabla = 14 + i
         # Valor evaluado
         cell = ws[f"C{fila_tabla}"]
         cell.value = ws[f"B{6+i}"].value
         style_data_cell(cell)
+
         # Extraer el valor de Sr del vector obtenido anteriormente
         sr = sr_values[i]
         cell_sr = ws[f"E{fila_tabla}"]
         cell_sr.value = sr
         if sr is not None:
-            cell_sr.number_format = "0.0E+0"
+            cell_sr.number_format = "0.00E+0"
         style_data_cell(cell_sr)
+
+        # Calcular Uref
         try:
             sr_value = float(sr)
         except (ValueError, TypeError):
@@ -259,22 +265,31 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
         cell_uref = ws[f"D{fila_tabla}"]
         cell_uref.value = uref
         if uref is not None:
-            cell_uref.number_format = "0.0E+0"
+            cell_uref.number_format = "0.00E+0"
         style_data_cell(cell_uref)
+
         # Umed se asigna el valor de Umax obtenido en la sección A (para cada nivel)
+        # Observación: Esto sólo asigna el último Umax calculado en el bucle anterior (fila=8).
+        # Probablemente se deba adaptar a cada nivel.
         cell_u_med = ws[f"F{fila_tabla}"]
-        cell_u_med.value = Umax
-        cell_u_med.number_format = "0.0E+0"
+        # Tomamos el valor de Umax de la fila actual (6+i)
+        actual_umax = ws[f"G{6+i}"].value
+        cell_u_med.value = actual_umax if actual_umax is not None else None
+        if actual_umax is not None:
+            cell_u_med.number_format = "0.00E+0"
         style_data_cell(cell_u_med)
+
+        # Calcular U(y)
         if uref is not None and sr is not None:
-            u_y = math.sqrt(uref**2 + sr**2)
+            u_y = math.sqrt(uref**2 + sr_value**2)
         else:
             u_y = None
         cell_u_y = ws[f"G{fila_tabla}"]
         cell_u_y.value = u_y
         if u_y is not None:
-            cell_u_y.number_format = "0.0E+0"
+            cell_u_y.number_format = "0.00E+0"
         style_data_cell(cell_u_y)
+
     crear_tabla(ws, "C13:G16", "Tabla_Estimacion_Incertidumbre")
 
     # ========================
@@ -284,40 +299,48 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
     ws["B18"] = ("Procedimiento de comparación (apartado 14,2, GTC 142 (ISO 21748))")
     ws["B18"].alignment = Alignment(wrapText=True, horizontal="center", vertical="center")
     ws["B18"].font = Font(bold=True, color="000080")
+
     headers_C = [("U1", "C22"), ("U2", "D22"), ("F", "F22"), ("Fcrítico", "G22")]
     for text, celda in headers_C:
         ws[celda] = str(text)
         style_header(ws[celda])
+
     f_critico = stats.f.ppf(0.95, 10, 10)
+
     for i in range(3):
         fila_origen = 14 + i
         fila_comp = 23 + i
-        u1 = ws[f"G{fila_origen}"].value
-        u2 = ws[f"D{fila_origen}"].value
+        u1 = ws[f"G{fila_origen}"].value  # U(y) calculado
+        u2 = ws[f"D{fila_origen}"].value  # Uref
         F_val = (u2 / u1) ** 2 if u1 not in (None, 0) and u2 is not None else None
+
         cell_u1 = ws[f"C{fila_comp}"]
         cell_u1.value = u1
         if u1 is not None:
             cell_u1.number_format = "0.00E+0"
         style_data_cell(cell_u1)
+
         cell_u2 = ws[f"D{fila_comp}"]
         cell_u2.value = u2
         if u2 is not None:
             cell_u2.number_format = "0.00E+0"
         style_data_cell(cell_u2)
+
         cell_F = ws[f"F{fila_comp}"]
         cell_F.value = F_val
         if F_val is not None:
-            cell_F.number_format = "0.0E+0"
+            cell_F.number_format = "0.0000E+0"
         style_data_cell(cell_F)
+
         cell_fcrit = ws[f"G{fila_comp}"]
         cell_fcrit.value = f_critico
         if f_critico is not None:
             cell_fcrit.number_format = "0.0000"
         style_data_cell(cell_fcrit)
+
     crear_tabla(ws, "C22:D25", "Tabla_Comparacion1")
     crear_tabla(ws, "F22:G25", "Tabla_Comparacion2")
-    
+
     # ========================
     # SECCIÓN D: DESCRIPCIÓN, HIPÓTESIS, EVALUACIÓN Y CONCLUSIÓN
     # ========================
@@ -365,33 +388,93 @@ def procesar_excel(archivo, hoja_origen, hoja_destino):
     # ========================
     try:
         wb.save(archivo)
-        print(f"Archivo procesado y actualizado en: {archivo}")
+        return f"Procesado: {archivo}"
     except Exception as e:
-        print(f"Error al guardar el archivo: {e}")
-        return None
-
-    return archivo
+        return f"Error al guardar '{archivo}': {e}"
 
 def seleccionar_carpeta():
     """
     Abre una ventana de diálogo para seleccionar la carpeta que contiene archivos Excel.
-    
-    Retorna:
-        La ruta de la carpeta seleccionada.
     """
-    root = tk.Tk()
-    root.withdraw()
-    folder_path = filedialog.askdirectory(title="Seleccione la carpeta que contiene los archivos Excel de Validaciones")
-    return folder_path
+    carpeta = filedialog.askdirectory(title="Seleccione la carpeta que contiene los archivos Excel de Validaciones")
+    if carpeta:
+        entry_ruta.delete(0, tk.END)
+        entry_ruta.insert(0, carpeta)
 
-if __name__ == "__main__":
-    folder = seleccionar_carpeta()
-    if folder:
-        for file in os.listdir(folder):
-            if file.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
-                full_path = os.path.join(folder, file)
-                print(f"Procesando: {full_path}")
-                procesar_excel(full_path, "sr ysR(Método) ISO 5725", "Estudio Incertidumbre")
-        print("Procesamiento completado para todos los archivos de la carpeta.")
-    else:
-        print("No se seleccionó ninguna carpeta.")
+def ejecutar_proceso():
+    """
+    Ejecuta el procesamiento de todos los archivos Excel en la carpeta seleccionada.
+    """
+    carpeta = entry_ruta.get()
+    if not os.path.isdir(carpeta):
+        messagebox.showerror("Error", "Seleccione una carpeta válida.")
+        return
+
+    archivos = [
+        os.path.join(carpeta, f)
+        for f in os.listdir(carpeta)
+        if f.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm"))
+    ]
+
+    if not archivos:
+        messagebox.showinfo("Información", "No hay archivos Excel válidos en la carpeta seleccionada.")
+        return
+
+    progreso['maximum'] = len(archivos)
+
+    for i, archivo in enumerate(archivos, 1):
+        resultado = procesar_excel(archivo)
+        listbox.insert(tk.END, resultado)
+        progreso['value'] = i
+        ventana.update_idletasks()
+
+    messagebox.showinfo("Completado", "Procesamiento finalizado.")
+
+# Crear interfaz gráfica
+ventana = tk.Tk()
+ventana.title("Estudio de Incertidumbre (ISO 21748)")
+ventana.geometry("700x500")
+ventana.configure(bg="#f4f4f4")
+
+label_instruccion = tk.Label(
+    ventana,
+    text="Seleccione la carpeta con los archivos Excel:",
+    bg="#f4f4f4",
+    font=("Arial", 10, "bold")
+)
+label_instruccion.pack(pady=5)
+
+frame = tk.Frame(ventana, bg="#f4f4f4")
+frame.pack()
+
+entry_ruta = tk.Entry(frame, width=60)
+entry_ruta.pack(side=tk.LEFT, padx=5)
+
+boton_examinar = tk.Button(
+    frame,
+    text="Examinar",
+    command=seleccionar_carpeta,
+    bg="#2196F3",
+    fg="white",
+    relief="raised"
+)
+boton_examinar.pack(side=tk.LEFT)
+
+boton_procesar = tk.Button(
+    ventana,
+    text="Procesar Archivos",
+    command=ejecutar_proceso,
+    bg="#4CAF50",
+    fg="white",
+    font=("Arial", 10, "bold"),
+    relief="raised"
+)
+boton_procesar.pack(pady=10)
+
+progreso = ttk.Progressbar(ventana, length=600, mode='determinate')
+progreso.pack(pady=5)
+
+listbox = tk.Listbox(ventana, width=90, height=10)
+listbox.pack(pady=5)
+
+ventana.mainloop()
