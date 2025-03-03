@@ -23,13 +23,14 @@ Nota: No se eliminan los outliers durante el análisis principal.
 """
 
 import os
-import pandas as pd
+from io import BytesIO
+from tkinter import Tk, filedialog, Label, Entry, Button, Frame, END, messagebox
+
 import numpy as np
+import pandas as pd
 import scipy.stats as stats
 import matplotlib.pyplot as plt
 import seaborn as sns
-from tkinter import Tk, filedialog, Label, Entry, Button, Frame, END
-from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as OpenPyxlImage
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -45,15 +46,15 @@ def ad_test_pvalue(stat, n):
     Se utiliza la transformación A2* = stat*(1 + 0.75/n + 2.25/n**2) y fórmulas aproximadas.
     Referencia: Stephens (1974) y otras implementaciones comunes.
     """
-    A2_star = stat * (1 + 0.75/n + 2.25/n**2)
+    A2_star = stat * (1 + 0.75 / n + 2.25 / n**2)
     if A2_star < 0.2:
-        p = 1 - np.exp(-13.436 + 101.14*A2_star - 223.73*A2_star**2)
+        p = 1 - np.exp(-13.436 + 101.14 * A2_star - 223.73 * A2_star**2)
     elif A2_star < 0.34:
-        p = 1 - np.exp(-8.318 + 42.796*A2_star - 59.938*A2_star**2)
+        p = 1 - np.exp(-8.318 + 42.796 * A2_star - 59.938 * A2_star**2)
     elif A2_star < 0.6:
-        p = np.exp(0.9177 - 4.279*A2_star - 1.38*A2_star**2)
+        p = np.exp(0.9177 - 4.279 * A2_star - 1.38 * A2_star**2)
     else:
-        p = np.exp(1.2937 - 5.709*A2_star + 0.0186*A2_star**2)
+        p = np.exp(1.2937 - 5.709 * A2_star + 0.0186 * A2_star**2)
     return p
 
 # -------------------------
@@ -92,7 +93,7 @@ def pruebas_de_normalidad(datos):
     resultados = {}
     alpha = 0.05
     n = len(datos)
-    
+
     # Shapiro–Wilk
     shapiro_stat, shapiro_p = stats.shapiro(datos)
     shapiro_result = {
@@ -101,15 +102,12 @@ def pruebas_de_normalidad(datos):
         "Hipótesis": "H0: Los datos siguen una distribución normal; H1: No siguen una distribución normal.",
         "Conclusión": "No se rechaza H0 (normal)" if shapiro_p > alpha else "Se rechaza H0 (no normal)"
     }
-    
+
     # Anderson–Darling
     ad_result = stats.anderson(datos, dist='norm')
     ad_stat = ad_result.statistic
     sig_levels = list(ad_result.significance_level)
-    if 5 in sig_levels:
-        idx = sig_levels.index(5)
-    else:
-        idx = np.argmin(np.abs(np.array(sig_levels) - 5))
+    idx = sig_levels.index(5) if 5 in sig_levels else np.argmin(np.abs(np.array(sig_levels) - 5))
     critical_value = ad_result.critical_values[idx]
     ad_p = ad_test_pvalue(ad_stat, n)
     anderson_result = {
@@ -119,14 +117,16 @@ def pruebas_de_normalidad(datos):
         "Hipótesis": "H0: Los datos siguen una distribución normal; H1: No siguen una distribución normal.",
         "Conclusión": "No se rechaza H0 (normal)" if ad_stat < critical_value else "Se rechaza H0 (no normal)"
     }
-    
+
     resultados["Shapiro"] = shapiro_result
     resultados["Anderson"] = anderson_result
     if (shapiro_p > alpha) and (ad_stat < critical_value):
-        resultados["Conclusión Global"] = "Las Muestras parecen pertenecer a una Distribucion Normal. Se recomienda utilizar estadísticos paramétricos."
+        resultados["Conclusión Global"] = ("Las Muestras parecen pertenecer a una Distribución Normal. "
+                                            "Se recomienda utilizar estadísticos paramétricos.")
     else:
-        resultados["Conclusión Global"] = "Las Muestras parecen No pertenecer a una Distribucion normal. Se recomienda utilizar estadísticos no paramétricos."
-    
+        resultados["Conclusión Global"] = ("Las Muestras parecen No pertenecer a una Distribución normal. "
+                                            "Se recomienda utilizar estadísticos no paramétricos.")
+
     return resultados
 
 def aplicar_transformaciones(datos):
@@ -136,7 +136,8 @@ def aplicar_transformaciones(datos):
     """
     resultados_transformaciones = {}
     datos_mod = datos.copy()
-    
+
+    # Ajuste mínimo si hay poca variabilidad
     if datos_mod.nunique() <= 1:
         if len(datos_mod) > 1:
             datos_mod.iloc[0] += 1e-6
@@ -145,7 +146,8 @@ def aplicar_transformaciones(datos):
             datos_mod.iloc[0] += 1e-6
 
     todos_positivos = (datos_mod > 0).all()
-    
+
+    # Transformación Logarítmica
     if todos_positivos:
         try:
             log_data = np.log(datos_mod)
@@ -158,6 +160,7 @@ def aplicar_transformaciones(datos):
     else:
         resultados_transformaciones['Log'] = {'Conclusión Global': 'No aplicable (datos <= 0)'}
 
+    # Transformación Box-Cox
     if todos_positivos:
         try:
             bc_data, lambda_opt = stats.boxcox(datos_mod)
@@ -171,6 +174,7 @@ def aplicar_transformaciones(datos):
     else:
         resultados_transformaciones['Box-Cox'] = {'Conclusión Global': 'No aplicable (datos <= 0)'}
 
+    # Transformación Yeo-Johnson
     try:
         pt = PowerTransformer(method='yeo-johnson')
         yj_data = pt.fit_transform(datos_mod.values.reshape(-1, 1)).flatten()
@@ -181,7 +185,7 @@ def aplicar_transformaciones(datos):
         resultados_transformaciones['Yeo-Johnson'] = res_yj
     except Exception as e:
         resultados_transformaciones['Yeo-Johnson'] = {'Conclusión Global': f'Error en Yeo-Johnson: {e}'}
-    
+
     return resultados_transformaciones
 
 # -------------------------
@@ -200,20 +204,20 @@ def grubbs_test_unico(datos, alpha=0.05):
     n = len(datos)
     if n < 3:
         return {"Error": "La prueba de Grubbs requiere al menos 3 datos."}
-    
+
     X_mean = np.mean(datos)
     s = np.std(datos, ddof=1)
     diff = np.abs(datos - X_mean)
     idx_extremo = np.argmax(diff)
     outlier = datos[idx_extremo]
     G = diff[idx_extremo] / s
-    
-    t_crit = stats.t.ppf(1 - alpha/(2*n), df=n-2)
+
+    t_crit = stats.t.ppf(1 - alpha / (2 * n), df=n - 2)
     G_crit = ((n - 1) / np.sqrt(n)) * np.sqrt(t_crit**2 / (n - 2 + t_crit**2))
-    
+
     t_val = ((n - 1) * G) / np.sqrt(n * (n - 2 + G**2))
-    p_val = n * (1 - stats.t.cdf(t_val, df=n-2))
-    
+    p_val = n * (1 - stats.t.cdf(t_val, df=n - 2))
+
     if G > G_crit:
         mensaje = (
             "Prueba de Grubbs para datos únicos:\n"
@@ -227,7 +231,7 @@ def grubbs_test_unico(datos, alpha=0.05):
             "Prueba de Grubbs para datos únicos:\n"
             f"No se detecta evidencia suficiente para considerar el valor {outlier:.6f} como outlier (G = {G:.4f} ≤ G_crit = {G_crit:.4f})."
         )
-    
+
     return {
         "X̄": X_mean,
         "s": s,
@@ -253,32 +257,27 @@ def grubbs_test_extremos(datos, alpha=0.05):
     n = len(datos)
     if n < 3:
         return {"Error": "La prueba de Grubbs requiere al menos 3 datos."}
-    
+
     X_mean = np.mean(datos)
     s = np.std(datos, ddof=1)
     X_min = np.min(datos)
     X_max = np.max(datos)
-    
+
     G_low = (X_mean - X_min) / s
     G_high = (X_max - X_mean) / s
-    
-    t_crit = stats.t.ppf(1 - alpha/(2*n), df=n-2)
+
+    t_crit = stats.t.ppf(1 - alpha / (2 * n), df=n - 2)
     G_crit = ((n - 1) / np.sqrt(n)) * np.sqrt(t_crit**2 / (n - 2 + t_crit**2))
-    
-    # Se calculan p-valores aunque no superen el umbral, para mostrarlos en Excel.
+
     t_val_low = ((n - 1) * G_low) / np.sqrt(n * (n - 2 + G_low**2)) if G_low != 0 else 0
-    p_val_low = n * (1 - stats.t.cdf(t_val_low, df=n-2)) if G_low > 0 else 1
-    
+    p_val_low = n * (1 - stats.t.cdf(t_val_low, df=n - 2)) if G_low > 0 else 1
+
     t_val_high = ((n - 1) * G_high) / np.sqrt(n * (n - 2 + G_high**2)) if G_high != 0 else 0
-    p_val_high = n * (1 - stats.t.cdf(t_val_high, df=n-2)) if G_high > 0 else 1
-    
-    outlier_low = X_min
-    outlier_high = X_max
-    
-    # Se decide si ambos superan G_crit
+    p_val_high = n * (1 - stats.t.cdf(t_val_high, df=n - 2)) if G_high > 0 else 1
+
     is_outlier_low = (G_low > G_crit)
     is_outlier_high = (G_high > G_crit)
-    
+
     if is_outlier_low and is_outlier_high:
         mensaje = (
             "Prueba de Grubbs para datos en cada extremo:\n"
@@ -288,7 +287,7 @@ def grubbs_test_extremos(datos, alpha=0.05):
             f"Como G_low = {G_low:.4f} y G_high = {G_high:.4f} > G_crit = {G_crit:.4f}, se rechaza H0.\n"
             "Conclusión: La muestra tiene posibles outliers en ambos extremos."
         )
-    elif is_outlier_low and (not is_outlier_high):
+    elif is_outlier_low:
         mensaje = (
             "Prueba de Grubbs para datos en cada extremo:\n"
             f"El valor {X_min:.6f} (extremo inferior) es sospechoso de ser outlier a un nivel de confianza del 95%, "
@@ -297,7 +296,7 @@ def grubbs_test_extremos(datos, alpha=0.05):
             f"Como G_low = {G_low:.4f} > G_crit = {G_crit:.4f}, se rechaza H0 para el extremo inferior.\n"
             "Conclusión: Se detecta un posible outlier en el extremo inferior."
         )
-    elif (not is_outlier_low) and is_outlier_high:
+    elif is_outlier_high:
         mensaje = (
             "Prueba de Grubbs para datos en cada extremo:\n"
             f"El valor {X_max:.6f} (extremo superior) es sospechoso de ser outlier a un nivel de confianza del 95%, "
@@ -312,14 +311,14 @@ def grubbs_test_extremos(datos, alpha=0.05):
             f"No se detecta evidencia suficiente para considerar los extremos como outliers.\n"
             f"(G_low = {G_low:.4f}, G_high = {G_high:.4f} ≤ G_crit = {G_crit:.4f})"
         )
-    
+
     return {
         "G_low": G_low,
         "p-valor_low": p_val_low,
-        "outlier_low": outlier_low,
+        "outlier_low": X_min,
         "G_high": G_high,
         "p-valor_high": p_val_high,
-        "outlier_high": outlier_high,
+        "outlier_high": X_max,
         "G_crit": G_crit,
         "mensaje": mensaje
     }
@@ -332,22 +331,21 @@ def analizar_normalidad_y_outliers(datos, nivel):
     Realiza el análisis de normalidad y outliers para 'datos' sin eliminar los outliers.
     Se evalúa la normalidad usando la muestra original, se intentan transformaciones si es necesario,
     y se aplican las pruebas de Grubbs para detectar posibles outliers (tanto un único dato como en ambos extremos).
-    Se generan gráficos (la misma gráfica ya que no se eliminan datos) y se retornan en 'Gráficas'.
+    Se generan gráficas y se retornan en 'Gráficas'.
     """
     resultados = {}
     resultados['Número de Outliers (IQR)'] = "No se eliminaron outliers"
-    
+
     # Pruebas de normalidad
     res_normales = pruebas_de_normalidad(datos)
     resultados['Pruebas Normalidad'] = res_normales
-    
-    # Transformaciones, si la conclusión global indica "No normal"
+
+    # Aplicar transformaciones si la conclusión global indica "No normal"
     if "No normal" in res_normales["Conclusión Global"]:
-        transf_res = aplicar_transformaciones(datos)
-        resultados['Transformaciones'] = transf_res
+        resultados['Transformaciones'] = aplicar_transformaciones(datos)
     else:
         resultados['Transformaciones'] = {}
-    
+
     # Pruebas de Grubbs
     grubbs_unico = grubbs_test_unico(datos)
     grubbs_extremos = grubbs_test_extremos(datos)
@@ -355,44 +353,41 @@ def analizar_normalidad_y_outliers(datos, nivel):
         "Grubbs Unico": grubbs_unico,
         "Grubbs Extremos": grubbs_extremos
     }
-    
-    # Generar las gráficas (se repiten aunque no se eliminen outliers)
-    plt.figure(figsize=(18, 10))
-    plt.subplot(2, 3, 1)
-    sns.histplot(datos, kde=True, bins=10, color='skyblue')
-    plt.title(f'Histograma - {nivel} (Original)')
-    plt.xlabel('Valores')
-    plt.ylabel('Frecuencia')
-    
-    plt.subplot(2, 3, 2)
-    stats.probplot(datos, dist="norm", plot=plt)
-    plt.title(f'Q-Q - {nivel} (Original)')
-    
-    plt.subplot(2, 3, 3)
-    sns.boxplot(x=datos, color='lightgreen')
-    plt.title(f'Boxplot - {nivel} (Original)')
-    
-    plt.subplot(2, 3, 4)
-    sns.histplot(datos, kde=True, bins=10, color='skyblue')
-    plt.title(f'Histograma - {nivel} (Sin eliminación)')
-    plt.xlabel('Valores')
-    plt.ylabel('Frecuencia')
-    
-    plt.subplot(2, 3, 5)
-    stats.probplot(datos, dist="norm", plot=plt)
-    plt.title(f'Q-Q - {nivel} (Sin eliminación)')
-    
-    plt.subplot(2, 3, 6)
-    sns.boxplot(x=datos, color='lightgreen')
-    plt.title(f'Boxplot - {nivel} (Sin eliminación)')
-    
+
+    # Generar gráficas usando subplots
+    fig, axs = plt.subplots(2, 3, figsize=(18, 10))
+
+    # Fila 1: Análisis de la muestra original
+    sns.histplot(datos, kde=True, bins=10, color='skyblue', ax=axs[0, 0])
+    axs[0, 0].set_title(f'Histograma - {nivel} (Original)')
+    axs[0, 0].set_xlabel('Valores')
+    axs[0, 0].set_ylabel('Frecuencia')
+
+    stats.probplot(datos, dist="norm", plot=axs[0, 1])
+    axs[0, 1].set_title(f'Q-Q - {nivel} (Original)')
+
+    sns.boxplot(x=datos, color='lightgreen', ax=axs[0, 2])
+    axs[0, 2].set_title(f'Boxplot - {nivel} (Original)')
+
+    # Fila 2: Repetición sin eliminación (mismos gráficos)
+    sns.histplot(datos, kde=True, bins=10, color='skyblue', ax=axs[1, 0])
+    axs[1, 0].set_title(f'Histograma - {nivel} (Sin eliminación)')
+    axs[1, 0].set_xlabel('Valores')
+    axs[1, 0].set_ylabel('Frecuencia')
+
+    stats.probplot(datos, dist="norm", plot=axs[1, 1])
+    axs[1, 1].set_title(f'Q-Q - {nivel} (Sin eliminación)')
+
+    sns.boxplot(x=datos, color='lightgreen', ax=axs[1, 2])
+    axs[1, 2].set_title(f'Boxplot - {nivel} (Sin eliminación)')
+
     plt.tight_layout()
     imgdata = BytesIO()
-    plt.savefig(imgdata, format='png', bbox_inches='tight')
-    plt.close()
+    fig.savefig(imgdata, format='png', bbox_inches='tight')
+    plt.close(fig)
     imgdata.seek(0)
     resultados['Gráficas'] = imgdata
-    
+
     return resultados
 
 # -------------------------
@@ -436,13 +431,13 @@ def main(folder=None):
             continue
 
         df.columns = ['Nivel 1', 'Nivel 2', 'Nivel 3']
-
         resultados_niveles = {}
+
         for nivel in df.columns:
             datos = df[nivel].dropna()
             resultados = analizar_normalidad_y_outliers(datos, nivel)
             resultados_niveles[nivel] = resultados
-            
+
             res_norm = resultados.get("Pruebas Normalidad", {})
             concl_global = res_norm.get("Conclusión Global", "")
             if "Normal" in concl_global:
@@ -461,10 +456,10 @@ def main(folder=None):
             print(f"Error al cargar el archivo '{archivo_excel}': {e}")
             continue
 
+        # Eliminar hojas antiguas si existen
         hoja_a_eliminar = 'Analisis total de Normalidad'
         if hoja_a_eliminar in wb.sheetnames:
             del wb[hoja_a_eliminar]
-
         if 'Normalidad' in wb.sheetnames:
             ws = wb['Normalidad']
             wb.remove(ws)
@@ -477,7 +472,6 @@ def main(folder=None):
         encabezado_fill = PatternFill(start_color='D7E4BC', end_color='D7E4BC', fill_type='solid')
         center_alignment = Alignment(horizontal='center', vertical='center')
         left_alignment = Alignment(horizontal='left', vertical='center')
-        
         current_row = 1
 
         ws.insert_rows(1, 3)
@@ -488,6 +482,7 @@ def main(folder=None):
         ws.row_dimensions[2].height = 30
         current_row = 4
 
+        # Escribir resultados para cada nivel
         for nivel, resultados in resultados_niveles.items():
             ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=6)
             cell = ws.cell(row=current_row, column=1, value=f'Análisis de Normalidad y Outliers - {nivel}')
@@ -544,6 +539,7 @@ def main(folder=None):
             ws.cell(row=current_row, column=2, value=resultados['Pruebas Normalidad'].get("Conclusión Global")).alignment = left_alignment
             current_row += 1
 
+            # Transformaciones (si existen)
             if resultados['Transformaciones']:
                 ws.cell(row=current_row, column=1, value="Transformaciones:").font = subtitulo_font
                 current_row += 1
@@ -584,9 +580,11 @@ def main(folder=None):
                 ws.cell(row=current_row, column=1, value="Valor atípico (dato único)").alignment = left_alignment
                 ws.cell(row=current_row, column=2, value=grubbs_unico.get("outlier")).alignment = left_alignment
                 current_row += 1
-                ws.cell(row=current_row, column=1, value="Mensaje Grubbs (dato único)").alignment = left_alignment
-                ws.cell(row=current_row, column=2, value=grubbs_unico.get("mensaje")).alignment = left_alignment
-                current_row += 1
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row+2, end_column=8)
+                cell_msg = ws.cell(row=current_row, column=1)
+                cell_msg.value = grubbs_unico.get("mensaje")
+                cell_msg.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                current_row += 3
 
             # Grubbs: extremos
             ws.cell(row=current_row, column=1, value="Prueba de Grubbs para datos en cada extremo").font = subtitulo_font
@@ -614,11 +612,13 @@ def main(folder=None):
                 ws.cell(row=current_row, column=1, value="Valor atípico (extremo superior)").alignment = left_alignment
                 ws.cell(row=current_row, column=2, value=grubbs_extremos.get("outlier_high")).alignment = left_alignment
                 current_row += 1
-                ws.cell(row=current_row, column=1, value="Mensaje Grubbs (extremos)").alignment = left_alignment
-                ws.cell(row=current_row, column=2, value=grubbs_extremos.get("mensaje")).alignment = left_alignment
-                current_row += 1
+                ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row+2, end_column=8)
+                cell_msg = ws.cell(row=current_row, column=1)
+                cell_msg.value = grubbs_extremos.get("mensaje")
+                cell_msg.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                current_row += 3
 
-            # Gráficas
+            # Agregar Gráficas
             imgdata = resultados['Gráficas']
             img = Image.open(imgdata)
             img_byte_arr = BytesIO()
@@ -628,10 +628,11 @@ def main(folder=None):
             scale_factor = 0.5
             img_openpyxl.width *= scale_factor
             img_openpyxl.height *= scale_factor
-            img_position = f'K{current_row - 10}'
+            img_position = f'I{current_row - 10}'
             ws.add_image(img_openpyxl, img_position)
             current_row += 2
 
+            # Datos originales
             ws.cell(row=current_row, column=1, value='Datos Originales').font = subtitulo_font
             current_row += 1
             ws.cell(row=current_row, column=1, value='Fila').font = encabezado_font
@@ -649,6 +650,8 @@ def main(folder=None):
                 current_row += 1
 
             current_row += 2
+
+        # Resumen final
         ws.cell(row=current_row, column=1, value='Resumen Final').font = subtitulo_font
         current_row += 1
         ws.cell(row=current_row, column=1, value='Nivel').font = encabezado_font
@@ -683,35 +686,45 @@ def main(folder=None):
 # INTERFAZ GRÁFICA DE USUARIO
 # -------------------------
 def interfaz_app():
-    """Crea la interfaz gráfica para la aplicación."""
+    """Crea y embellece la interfaz gráfica para la aplicación."""
     window = Tk()
-    window.title("Aplicación de Análisis de Normalidad y Outliers")
-    window.geometry("600x400")
+    window.title("Análisis de Normalidad y Outliers")
+    window.geometry("700x500")
+    window.resizable(False, False)
+
+    # Contenedor principal
+    main_frame = Frame(window, padx=20, pady=20)
+    main_frame.pack(fill="both", expand=True)
 
     # Título de la aplicación
-    title_label = Label(window, text="Análisis de Normalidad y Outliers en Archivos Excel", font=("Arial", 16, "bold"))
+    title_label = Label(main_frame, text="Análisis de Normalidad y Outliers en Archivos Excel",
+                        font=("Arial", 18, "bold"))
     title_label.pack(pady=10)
 
     # Propósito
-    purpose_text = ("Esta aplicación permite analizar la normalidad y detectar outliers en archivos Excel.\n"
-                    "Se evaluarán pruebas estadísticas y se generará un reporte en cada archivo.")
-    purpose_label = Label(window, text=purpose_text, font=("Arial", 12), justify="center")
+    purpose_text = (
+        "Esta aplicación permite analizar la normalidad y detectar outliers en archivos Excel.\n"
+        "Se evaluarán pruebas estadísticas y se generará un reporte en cada archivo."
+    )
+    purpose_label = Label(main_frame, text=purpose_text, font=("Arial", 12), justify="center")
     purpose_label.pack(pady=5)
 
     # Instrucciones de uso
-    instructions_text = ("Instrucciones de uso:\n"
-                         "1. Indique la ruta de la carpeta que contiene los archivos Excel, o use el botón 'Seleccionar Carpeta'.\n"
-                         "2. Haga clic en 'Procesar Datos' para iniciar el análisis.\n"
-                         "3. Los resultados se guardarán en la hoja 'Normalidad' de cada archivo Excel.")
-    instructions_label = Label(window, text=instructions_text, font=("Arial", 10), justify="left")
+    instructions_text = (
+        "Instrucciones de uso:\n"
+        "1. Indique la ruta de la carpeta que contiene los archivos Excel o use el botón 'Seleccionar Carpeta'.\n"
+        "2. Haga clic en 'Procesar Datos' para iniciar el análisis.\n"
+        "3. Los resultados se guardarán en la hoja 'Normalidad' de cada archivo Excel."
+    )
+    instructions_label = Label(main_frame, text=instructions_text, font=("Arial", 10), justify="left")
     instructions_label.pack(pady=5)
 
     # Sección para seleccionar la carpeta
-    folder_frame = Frame(window)
+    folder_frame = Frame(main_frame)
     folder_frame.pack(pady=10)
-    folder_label = Label(folder_frame, text="Carpeta:")
+    folder_label = Label(folder_frame, text="Carpeta:", font=("Arial", 12))
     folder_label.pack(side="left", padx=5)
-    folder_entry = Entry(folder_frame, width=40)
+    folder_entry = Entry(folder_frame, width=40, font=("Arial", 12))
     folder_entry.pack(side="left", padx=5)
 
     def browse_folder():
@@ -719,8 +732,12 @@ def interfaz_app():
         if folder:
             folder_entry.delete(0, END)
             folder_entry.insert(0, folder)
-    browse_button = Button(folder_frame, text="Seleccionar Carpeta", command=browse_folder)
+    browse_button = Button(folder_frame, text="Seleccionar Carpeta", font=("Arial", 10, "bold"), command=browse_folder)
     browse_button.pack(side="left", padx=5)
+
+    # Etiqueta de estado para informar al usuario
+    status_label = Label(main_frame, text="", font=("Arial", 12), fg="green")
+    status_label.pack(pady=5)
 
     # Botón para procesar los datos
     def process_data():
@@ -728,14 +745,22 @@ def interfaz_app():
         if not folder:
             folder = filedialog.askdirectory(title="Seleccionar carpeta con archivos de Excel")
             if not folder:
-                print("No se seleccionó ninguna carpeta.")
+                status_label.config(text="No se seleccionó ninguna carpeta.", fg="red")
                 return
             folder_entry.delete(0, END)
             folder_entry.insert(0, folder)
+        status_label.config(text="Procesando...", fg="blue")
+        window.update_idletasks()
         main(folder)
-        print("Procesamiento completado.")
-    process_button = Button(window, text="Procesar Datos", font=("Arial", 12, "bold"), command=process_data)
+        status_label.config(text="Procesamiento completado.", fg="green")
+        messagebox.showinfo("Proceso Finalizado", "Procesamiento completado.")
+
+    process_button = Button(main_frame, text="Procesar Datos", font=("Arial", 14, "bold"), command=process_data)
     process_button.pack(pady=20)
+
+    # Botón para salir
+    exit_button = Button(main_frame, text="Salir", font=("Arial", 12), command=window.destroy)
+    exit_button.pack(pady=10)
 
     window.mainloop()
 

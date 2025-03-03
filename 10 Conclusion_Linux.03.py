@@ -212,10 +212,10 @@ def process_file(file_tuple):
         )
 
         wb = load_workbook(file_path)
-        if "Plan de validación" in wb.sheetnames:
-            ws = wb["Plan de validación"]
+        if "Informe de Validación" in wb.sheetnames:
+            ws = wb["Informe de Validación"]
         else:
-            ws = wb.create_sheet("Plan de validación")
+            ws = wb.create_sheet("Informe de Validación")
 
         # Fusionar las celdas desde B59 a AF180 para colocar la respuesta en un solo bloque
         ws.merge_cells("B59:AF210")
